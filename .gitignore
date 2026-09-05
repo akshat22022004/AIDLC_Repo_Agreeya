@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+uploads/
+parsed/
+server/uploads/
+server/parsed/
+*.log
+.DS_Store
