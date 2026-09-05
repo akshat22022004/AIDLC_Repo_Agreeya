@@ -36,6 +36,7 @@ function QuestionCard({
 }) {
   const [textValue, setTextValue] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const [otherText, setOtherText] = useState('');
   const ps = PRIORITY_STYLES[question.priority];
 
   const handleSubmit = () => {
@@ -43,11 +44,15 @@ function QuestionCard({
       if (!textValue.trim()) return;
       onAnswer(question.id, textValue.trim());
     } else if (question.answerType === 'single-select') {
-      if (selectedOptions.length === 0) return;
-      onAnswer(question.id, selectedOptions[0]);
+      const custom = otherText.trim();
+      const answer = custom || selectedOptions[0];
+      if (!answer) return;
+      onAnswer(question.id, answer);
     } else {
-      if (selectedOptions.length === 0) return;
-      onAnswer(question.id, selectedOptions);
+      const custom = otherText.trim();
+      const combined = custom ? [...selectedOptions, custom] : selectedOptions;
+      if (combined.length === 0) return;
+      onAnswer(question.id, combined);
     }
   };
 
@@ -111,13 +116,28 @@ function QuestionCard({
                 <input
                   type="radio"
                   name={question.id}
-                  checked={selectedOptions[0] === opt}
-                  onChange={() => setSelectedOptions([opt])}
+                  checked={selectedOptions[0] === opt && !otherText.trim()}
+                  onChange={() => {
+                    setSelectedOptions([opt]);
+                    setOtherText('');
+                  }}
                   className="w-4 h-4 text-accent"
                 />
                 <span className="text-sm text-slate-700">{opt}</span>
               </label>
             ))}
+            <div className="pt-1">
+              <label className="text-xs text-slate-500 mb-1 block">
+                None of these fit? Type your own answer:
+              </label>
+              <input
+                type="text"
+                value={otherText}
+                onChange={(e) => setOtherText(e.target.value)}
+                placeholder="Custom answer (overrides the selection above)"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
+              />
+            </div>
           </div>
         )}
 
@@ -138,6 +158,18 @@ function QuestionCard({
                 <span className="text-sm text-slate-700">{opt}</span>
               </label>
             ))}
+            <div className="pt-1">
+              <label className="text-xs text-slate-500 mb-1 block">
+                Add an answer not listed above (optional):
+              </label>
+              <input
+                type="text"
+                value={otherText}
+                onChange={(e) => setOtherText(e.target.value)}
+                placeholder="Custom answer (added alongside your selections)"
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent bg-white"
+              />
+            </div>
           </div>
         )}
 
