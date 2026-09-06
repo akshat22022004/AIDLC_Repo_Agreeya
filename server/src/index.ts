@@ -9,6 +9,16 @@ import analyzeRouter from './routes/analyze.js';
 import questionsRouter from './routes/questions.js';
 import exportRouter from './routes/export.js';
 import chatRouter from './routes/chat.js';
+import oauthRouter from './routes/oauth.js';
+import connectionsRouter from './routes/connections.js';
+import ticketsRouter from './routes/tickets.js';
+import requirementsRouter from './routes/requirements.js';
+import gitRouter from './routes/git.js';
+import projectsRouter from './routes/projects.js';
+import architectureRouter from './routes/architecture.js';
+import designRouter from './routes/design.js';
+import testsRouter from './routes/tests.js';
+import releaseRouter from './routes/release.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -16,7 +26,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
-for (const dir of ['uploads', 'parsed']) {
+for (const dir of ['uploads', 'parsed', 'connections', 'requirements', 'projects', 'data', 'architecture', 'design', 'tests', 'release']) {
   const p = path.resolve(dir);
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
@@ -29,6 +39,16 @@ app.use('/api/analyze', analyzeRouter);
 app.use('/api/questions', questionsRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/chat', chatRouter);
+app.use('/api/oauth', oauthRouter);
+app.use('/api/connections', connectionsRouter);
+app.use('/api/tickets', ticketsRouter);
+app.use('/api/requirements', requirementsRouter);
+app.use('/api/git', gitRouter);
+app.use('/api/projects', projectsRouter);
+app.use('/api/architecture', architectureRouter);
+app.use('/api/design', designRouter);
+app.use('/api/tests', testsRouter);
+app.use('/api/release', releaseRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -5,5 +5,13 @@ uploads/
 parsed/
 server/uploads/
 server/parsed/
+connections/
+server/connections/
+requirements/
+server/requirements/
+projects/
+server/projects/
+data/
+server/data/
 *.log
 .DS_Store

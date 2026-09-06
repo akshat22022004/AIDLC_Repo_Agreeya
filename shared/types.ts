@@ -64,3 +64,425 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
+
+// ── Ticket Integration Types ──
+
+export interface TicketProviderConnection {
+  provider: 'azure-devops' | 'jira';
+  connected: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: string;
+  organizationUrl?: string;
+  cloudId?: string;
+  userName?: string;
+  orgName?: string;
+}
+
+export interface TicketProject {
+  id: string;
+  name: string;
+  key?: string;
+  url?: string;
+}
+
+export interface Ticket {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  type: 'epic' | 'feature' | 'story' | 'task' | 'subtask' | 'bug';
+  status: string;
+  priority: string;
+  assignee?: string;
+  sprint?: string;
+  storyPoints?: number;
+  acceptanceCriteria?: string;
+  labels: string[];
+  parentId?: string;
+  url: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateTicketInput {
+  title: string;
+  description: string;
+  type: 'epic' | 'feature' | 'story' | 'task' | 'subtask';
+  priority: string;
+  labels?: string[];
+  storyPoints?: number;
+  acceptanceCriteria?: string;
+  parentId?: string;
+  projectId: string;
+}
+
+export interface CreatedTicket {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  url: string;
+}
+
+export interface TicketFilter {
+  type?: string;
+  status?: string;
+  sprint?: string;
+  assignee?: string;
+}
+
+export interface TicketHierarchyNode {
+  tempId: string;
+  ticket: CreateTicketInput;
+  children: TicketHierarchyNode[];
+  createdTicket?: CreatedTicket;
+  status: 'pending' | 'creating' | 'created' | 'failed';
+  error?: string;
+}
+
+export interface DuplicateCandidate {
+  ticket: Ticket;
+  similarity: number;
+  reason: string;
+}
+
+export interface TicketCreationSummary {
+  epics: number;
+  features: number;
+  stories: number;
+  tasks: number;
+  total: number;
+  created: CreatedTicket[];
+  failed: { title: string; error: string }[];
+}
+
+// ── Requirements Generator Types ──
+
+export type SectionStatus = 'pending' | 'generating' | 'draft' | 'approved' | 'skipped';
+
+export interface SectionVersion {
+  version: number;
+  content: string;
+  generatedAt: string;
+  feedback?: string;
+  status: 'superseded' | 'current' | 'approved';
+  approvedAt?: string;
+}
+
+export interface RequirementSection {
+  number: number;
+  title: string;
+  key: string;
+  status: SectionStatus;
+  content: string;
+  versions: SectionVersion[];
+}
+
+export interface RequirementDoc {
+  id: string;
+  sessionId: string;
+  projectName: string;
+  generatedDate: string;
+  status: 'in-progress' | 'approved' | 'finalized';
+  sourceDocuments: string[];
+  linkedTickets: string[];
+  confidenceScore: number;
+  sections: RequirementSection[];
+}
+
+export interface GenerateSectionRequest {
+  sectionNumber: number;
+  feedback?: string;
+}
+
+export interface GenerateSectionResponse {
+  sectionNumber: number;
+  content: string;
+  version: number;
+}
+
+// ── Git Integration Types (Phase 4) ──
+
+export type GitProvider = 'github' | 'gitlab' | 'azure-repos';
+
+export interface GitProviderConnection {
+  provider: GitProvider;
+  connected: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: string;
+  userName?: string;
+  orgName?: string;
+  avatarUrl?: string;
+}
+
+export interface Repo {
+  id: string;
+  name: string;
+  fullName: string;
+  defaultBranch: string;
+  url: string;
+  private: boolean;
+}
+
+export interface Branch {
+  name: string;
+  sha: string;
+  isDefault: boolean;
+}
+
+export interface FileCommit {
+  path: string;
+  content: string;
+}
+
+export interface CommitResult {
+  sha: string;
+  url: string;
+  message: string;
+}
+
+export interface PullRequest {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  status: 'open' | 'merged' | 'closed';
+}
+
+export interface GitRepoConfig {
+  provider: GitProvider;
+  repoId: string;
+  repoName: string;
+  branch: string;
+  createAidlcBranch: boolean;
+  autoCreatePR: boolean;
+  basePath: string;
+}
+
+export interface GitCommitHistoryEntry {
+  version: string;
+  sha: string;
+  date: string;
+  message: string;
+}
+
+// ── Project Dashboard Types (Phase 5) ──
+
+export type ProjectStatus = 'active' | 'completed' | 'on-hold' | 'archived';
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  client?: string;
+  createdAt: string;
+  updatedAt: string;
+  status: ProjectStatus;
+
+  sessionId?: string;
+
+  ticketProvider?: 'azure-devops' | 'jira';
+  ticketProjectId?: string;
+  gitProvider?: GitProvider;
+  gitRepoId?: string;
+  gitBranch?: string;
+  gitConfig?: GitRepoConfig;
+
+  requirementCount: number;
+  approvedCount: number;
+  ticketCount: number;
+  lastActivity: string;
+}
+
+export interface ProjectStats {
+  totalProjects: number;
+  activeRequirements: number;
+  connectedTickets: number;
+  pendingApprovals: number;
+}
+
+// ── Architecture Types ──
+
+export type ArchSectionStatus = 'pending' | 'generating' | 'draft' | 'approved' | 'skipped';
+
+export interface ArchSectionVersion {
+  version: number;
+  content: string;
+  generatedAt: string;
+  feedback?: string;
+  status: 'superseded' | 'current' | 'approved';
+  approvedAt?: string;
+}
+
+export interface ArchitectureSection {
+  number: number;
+  title: string;
+  key: string;
+  status: ArchSectionStatus;
+  content: string;
+  versions: ArchSectionVersion[];
+}
+
+export interface ArchitectureDoc {
+  id: string;
+  projectId: string;
+  requirementId: string;
+  projectName: string;
+  generatedDate: string;
+  status: 'draft' | 'in-progress' | 'finalized';
+  sections: ArchitectureSection[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ArchitectureSummary {
+  id: string;
+  requirementId: string;
+  title: string;
+  status: string;
+  sectionProgress: string;
+  createdAt: string;
+}
+
+// ── Design Types ──
+
+export type DesignSectionStatus = 'pending' | 'generating' | 'draft' | 'approved' | 'skipped';
+
+export interface DesignSectionVersion {
+  version: number;
+  content: string;
+  generatedAt: string;
+  feedback?: string;
+  status: 'superseded' | 'current' | 'approved';
+  approvedAt?: string;
+}
+
+export interface DesignSection {
+  number: number;
+  title: string;
+  key: string;
+  status: DesignSectionStatus;
+  content: string;
+  versions: DesignSectionVersion[];
+}
+
+export interface DesignDoc {
+  id: string;
+  projectId: string;
+  requirementId: string;
+  architectureId: string;
+  projectName: string;
+  generatedDate: string;
+  status: 'draft' | 'in-progress' | 'finalized';
+  sections: DesignSection[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DesignSummary {
+  id: string;
+  requirementId: string;
+  architectureId: string;
+  title: string;
+  status: string;
+  sectionProgress: string;
+  createdAt: string;
+}
+
+// ── Test Types ──
+
+export type TestSectionStatus = 'pending' | 'generating' | 'draft' | 'approved' | 'skipped';
+
+export interface TestSectionVersion {
+  version: number;
+  content: string;
+  generatedAt: string;
+  feedback?: string;
+  status: 'superseded' | 'current' | 'approved';
+  approvedAt?: string;
+}
+
+export interface TestSection {
+  number: number;
+  title: string;
+  key: string;
+  status: TestSectionStatus;
+  content: string;
+  versions: TestSectionVersion[];
+}
+
+export interface TestDoc {
+  id: string;
+  projectId: string;
+  requirementId: string;
+  architectureId: string;
+  designId: string;
+  projectName: string;
+  generatedDate: string;
+  status: 'draft' | 'in-progress' | 'finalized';
+  sections: TestSection[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TestSummary {
+  id: string;
+  requirementId: string;
+  architectureId: string;
+  designId: string;
+  title: string;
+  status: string;
+  sectionProgress: string;
+  createdAt: string;
+}
+
+// ── Release Types ──
+
+export type ReleaseSectionStatus = 'pending' | 'generating' | 'draft' | 'approved' | 'skipped';
+
+export interface ReleaseSectionVersion {
+  version: number;
+  content: string;
+  generatedAt: string;
+  feedback?: string;
+  status: 'superseded' | 'current' | 'approved';
+  approvedAt?: string;
+}
+
+export interface ReleaseSection {
+  number: number;
+  title: string;
+  key: string;
+  status: ReleaseSectionStatus;
+  content: string;
+  versions: ReleaseSectionVersion[];
+}
+
+export interface ReleaseDoc {
+  id: string;
+  projectId: string;
+  requirementId: string;
+  architectureId: string;
+  designId: string;
+  testId: string;
+  projectName: string;
+  generatedDate: string;
+  status: 'draft' | 'in-progress' | 'finalized';
+  sections: ReleaseSection[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReleaseSummary {
+  id: string;
+  requirementId: string;
+  architectureId: string;
+  designId: string;
+  testId: string;
+  title: string;
+  status: string;
+  sectionProgress: string;
+  createdAt: string;
+}
