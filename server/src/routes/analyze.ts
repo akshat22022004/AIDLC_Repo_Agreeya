@@ -26,10 +26,11 @@ router.post('/:sessionId', async (req, res) => {
     if (!llm) {
       res.status(500).json({
         success: false,
-        error: 'No LLM configured. Please set GEMINI_API_KEY in your .env file.',
+        error: 'No LLM configured. Please set OPENAI_API_KEY or GEMINI_API_KEY in your .env file.',
       });
       return;
     }
+    console.log(`[analyze] session=${sessionId} using LLM adapter: ${llm.name}`);
 
     session.currentStep = 'analyzing';
 
@@ -44,14 +45,21 @@ router.post('/:sessionId', async (req, res) => {
     const fullContent = contentParts.join('\n\n');
 
     let previousAnswers: string | undefined;
-    if (session.analyses.length > 0) {
-      const lastAnalysis = session.analyses[session.analyses.length - 1];
-      const answered = lastAnalysis.questions.filter((q) => q.status === 'answered');
-      if (answered.length > 0) {
-        previousAnswers = answered
-          .map((q) => `Q: ${q.question}\nA: ${Array.isArray(q.answer) ? q.answer.join(', ') : q.answer}`)
-          .join('\n\n');
+    const seenQuestions = new Set<string>();
+    const allAnswered: { question: string; answer: string | string[] }[] = [];
+    for (const pastAnalysis of session.analyses) {
+      for (const q of pastAnalysis.questions) {
+        if (q.status !== 'answered' || q.answer === undefined) continue;
+        const key = q.question.trim().toLowerCase();
+        if (seenQuestions.has(key)) continue;
+        seenQuestions.add(key);
+        allAnswered.push({ question: q.question, answer: q.answer });
       }
+    }
+    if (allAnswered.length > 0) {
+      previousAnswers = allAnswered
+        .map((q) => `Q: ${q.question}\nA: ${Array.isArray(q.answer) ? q.answer.join(', ') : q.answer}`)
+        .join('\n\n');
     }
 
     const analysis = await analyzeDocuments(llm, fullContent, previousAnswers);
@@ -60,7 +68,8 @@ router.post('/:sessionId', async (req, res) => {
 
     res.json({ success: true, data: analysis });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error(`[analyze] session=${req.params.sessionId} failed:`, err);
+    res.status(500).json({ success: false, error: err.message || 'Unknown error during analysis' });
   }
 });
 

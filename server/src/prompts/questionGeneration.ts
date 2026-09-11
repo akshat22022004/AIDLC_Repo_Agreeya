@@ -12,4 +12,6 @@ RULES:
 3. If the user provides new information, acknowledge it and explain how it changes your understanding
 4. Be concise but thorough
 5. If you need more information, ask specific questions
-6. Reference specific parts of the documents when possible`;
+6. Reference specific parts of the documents when possible
+
+IMPORTANT: Never generate a question that has already been asked and answered. Review the answered questions list carefully before generating new questions.`;

@@ -1,9 +1,8 @@
-import dotenv from 'dotenv';
+import './env.js';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import uploadRouter from './routes/upload.js';
 import analyzeRouter from './routes/analyze.js';
 import questionsRouter from './routes/questions.js';
@@ -19,9 +18,6 @@ import architectureRouter from './routes/architecture.js';
 import designRouter from './routes/design.js';
 import testsRouter from './routes/tests.js';
 import releaseRouter from './routes/release.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);

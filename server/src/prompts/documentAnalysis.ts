@@ -56,8 +56,8 @@ export function buildAnalysisPrompt(additionalContext?: string): string {
   if (!additionalContext) return DOCUMENT_ANALYSIS_PROMPT;
   return `${DOCUMENT_ANALYSIS_PROMPT}
 
-ADDITIONAL CONTEXT FROM PREVIOUS Q&A:
+The following questions were already asked and answered. DO NOT ask these questions again:
 ${additionalContext}
 
-Re-analyze the documents incorporating these answers. Update your understanding, adjust confidence score, and generate any NEW follow-up questions that arise from the answers. Remove questions that have been answered.`;
+Re-analyze the documents incorporating these answers. Update your understanding, adjust confidence score, and generate any NEW follow-up questions that arise from the answers. Do not repeat, rephrase, or re-ask any question listed above.`;
 }
