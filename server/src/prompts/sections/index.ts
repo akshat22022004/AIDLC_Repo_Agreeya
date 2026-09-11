@@ -3,6 +3,8 @@ import { SECTION_TEMPLATES } from './templates.js';
 export interface SectionContext {
   parsedDocuments: string;
   qnaAnswers: string;
+  /** Full second-brain.md context block — the project's single source of truth. */
+  secondBrainContext?: string;
   ticketData?: string;
   previousSections: Record<string, string>;
   userFeedback?: string;
@@ -36,7 +38,7 @@ export function getSectionPrompt(sectionNumber: number, context: SectionContext)
     .join('\n\n');
 
   let prompt = `${BASE_INSTRUCTION}
-
+${context.secondBrainContext ? `\n---\n\n${context.secondBrainContext}\n\n---\n` : ''}
 You are generating SECTION ${template.number}: "${template.title}"
 ${template.description}
 

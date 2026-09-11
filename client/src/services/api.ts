@@ -28,6 +28,10 @@ import type {
   TestSummary,
   ReleaseDoc,
   ReleaseSummary,
+  SecondBrainStatus,
+  UnderstandingSummary,
+  HumanInput,
+  EpicStoriesResult,
 } from '../types';
 
 const BASE = '/api';
@@ -50,51 +54,171 @@ export async function getFiles(sessionId: string): Promise<UploadedFile[]> {
   return handleResponse<UploadedFile[]>(res);
 }
 
-export async function analyzeDocuments(sessionId: string): Promise<AnalysisResult> {
-  const res = await fetch(`${BASE}/analyze/${sessionId}`, { method: 'POST' });
-  return handleResponse<AnalysisResult>(res);
+/** Cycle + approval metadata returned alongside analysis and answer calls. */
+export interface CycleState {
+  cycleCount: number;
+  maxCycles: number;
+  questionsExhausted: boolean;
+  readyForApproval: boolean;
+  approvalStatus: 'pending' | 'approved';
+  roundComplete?: boolean;
+  questionCycle?: number | null;
+  questionsWithheldReason?: string;
 }
 
-export async function getAnalysis(sessionId: string): Promise<AnalysisResult> {
+export type AnalysisWithCycle = AnalysisResult & CycleState;
+
+export async function analyzeDocuments(sessionId: string): Promise<AnalysisWithCycle> {
+  const res = await fetch(`${BASE}/analyze/${sessionId}`, { method: 'POST' });
+  return handleResponse<AnalysisWithCycle>(res);
+}
+
+export async function getAnalysis(sessionId: string): Promise<AnalysisWithCycle> {
   const res = await fetch(`${BASE}/analyze/${sessionId}`);
-  return handleResponse<AnalysisResult>(res);
+  return handleResponse<AnalysisWithCycle>(res);
+}
+
+export async function getAnalysisStatus(sessionId: string): Promise<SecondBrainStatus> {
+  const res = await fetch(`${BASE}/analyze/${sessionId}/status`);
+  return handleResponse<SecondBrainStatus>(res);
 }
 
 export async function answerQuestion(
   sessionId: string,
   questionId: string,
   answer: string | string[]
-): Promise<ClarifyingQuestion> {
+): Promise<{ question: ClarifyingQuestion } & CycleState> {
   const res = await fetch(`${BASE}/questions/${sessionId}/answer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questionId, answer }),
   });
-  return handleResponse<ClarifyingQuestion>(res);
+  return handleResponse<{ question: ClarifyingQuestion } & CycleState>(res);
+}
+
+export async function answerQuestionsBulk(
+  sessionId: string,
+  answers: { questionId: string; answer: string | string[] }[]
+): Promise<{ questions: ClarifyingQuestion[] } & CycleState> {
+  const res = await fetch(`${BASE}/questions/${sessionId}/answer-bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers }),
+  });
+  return handleResponse<{ questions: ClarifyingQuestion[] } & CycleState>(res);
 }
 
 export async function skipQuestion(
   sessionId: string,
   questionId: string
-): Promise<ClarifyingQuestion> {
+): Promise<{ question: ClarifyingQuestion } & CycleState> {
   const res = await fetch(`${BASE}/questions/${sessionId}/skip`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ questionId }),
   });
-  return handleResponse<ClarifyingQuestion>(res);
+  return handleResponse<{ question: ClarifyingQuestion } & CycleState>(res);
 }
 
 export async function importAnswers(
   sessionId: string,
   markdown: string
-): Promise<{ importedCount: number; questions: ClarifyingQuestion[] }> {
+): Promise<{ importedCount: number; questions: ClarifyingQuestion[] } & Partial<CycleState>> {
   const res = await fetch(`${BASE}/questions/${sessionId}/import-answers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ markdown }),
   });
-  return handleResponse<{ importedCount: number; questions: ClarifyingQuestion[] }>(res);
+  return handleResponse<
+    { importedCount: number; questions: ClarifyingQuestion[] } & Partial<CycleState>
+  >(res);
+}
+
+// ── Human Approval (Second Brain) ──
+
+export interface ApprovalState extends SecondBrainStatus {
+  summary: UnderstandingSummary | null;
+  humanInputs: HumanInput[];
+  projectName: string;
+  sourceDocuments: string[];
+  canGenerateRequirements: boolean;
+  canGenerateExcel: boolean;
+}
+
+export async function getApproval(sessionId: string): Promise<ApprovalState> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/approval`);
+  return handleResponse<ApprovalState>(res);
+}
+
+export async function generateApprovalSummary(
+  sessionId: string,
+  force = false
+): Promise<ApprovalState> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/approval`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force }),
+  });
+  return handleResponse<ApprovalState>(res);
+}
+
+export async function addApprovalInfo(sessionId: string, text: string): Promise<ApprovalState> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/approval/add-info`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  return handleResponse<ApprovalState>(res);
+}
+
+export async function approveUnderstanding(
+  sessionId: string,
+  additionalInput?: string
+): Promise<ApprovalState> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/approval/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ additionalInput }),
+  });
+  return handleResponse<ApprovalState>(res);
+}
+
+export async function getSecondBrain(
+  sessionId: string
+): Promise<{ markdown: string; path: string }> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/second-brain`);
+  return handleResponse<{ markdown: string; path: string }>(res);
+}
+
+// ── Epic & User Stories Excel Report ──
+
+export interface ExcelReportState {
+  exists: boolean;
+  fileAvailable: boolean;
+  approvalStatus: 'pending' | 'approved';
+  result: EpicStoriesResult | null;
+  downloadUrl: string | null;
+}
+
+export async function getExcelReport(sessionId: string): Promise<ExcelReportState> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/excel-report`);
+  return handleResponse<ExcelReportState>(res);
+}
+
+export async function generateExcelReport(
+  sessionId: string,
+  regenerate = false
+): Promise<EpicStoriesResult & { reused?: boolean }> {
+  const res = await fetch(`${BASE}/projects/${sessionId}/excel-report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ regenerate }),
+  });
+  return handleResponse<EpicStoriesResult & { reused?: boolean }>(res);
+}
+
+export function getExcelReportDownloadUrl(sessionId: string): string {
+  return `${BASE}/projects/${sessionId}/excel-report/download`;
 }
 
 export function getExportQuestionsUrl(sessionId: string): string {

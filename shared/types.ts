@@ -49,7 +49,104 @@ export interface Session {
   createdAt: string;
   files: UploadedFile[];
   analyses: AnalysisResult[];
-  currentStep: 'upload' | 'analyzing' | 'understanding' | 'questions' | 'refined';
+  currentStep: 'upload' | 'analyzing' | 'understanding' | 'questions' | 'approval' | 'approved' | 'refined';
+  /** Number of question cycles already issued to the user. Hard capped at MAX_QUESTION_CYCLES. */
+  cycleCount: number;
+  /** Human-in-the-loop gate. Requirements/Excel generation is blocked until 'approved'. */
+  approvalStatus: 'pending' | 'approved';
+  approvedAt?: string;
+}
+
+// ── Second Brain / Human Approval Types ──
+
+export interface QnaRecord {
+  cycle: number;
+  questionId: string;
+  question: string;
+  category: string;
+  priority: string;
+  answer: string;
+  answeredAt: string;
+}
+
+export interface HumanInput {
+  text: string;
+  at: string;
+}
+
+export interface UnderstandingSummary {
+  projectOverview: string;
+  confirmedFacts: string[];
+  assumptions: string[];
+  openItems: string[];
+  readyToGenerate: boolean;
+  confidenceScore: number;
+  generatedAt?: string;
+}
+
+export interface SecondBrainData {
+  sessionId: string;
+  projectName: string;
+  createdAt: string;
+  lastUpdated: string;
+  sourceDocuments: string[];
+  documentUnderstanding: string;
+  confidenceScore: number;
+  cycleCount: number;
+  qna: QnaRecord[];
+  confirmedFacts: string[];
+  assumptions: string[];
+  openItems: string[];
+  humanInputs: HumanInput[];
+  approval: {
+    status: 'pending' | 'approved';
+    approvedAt?: string;
+  };
+  understandingSummary?: UnderstandingSummary;
+  generatedStories?: EpicStoriesResult;
+}
+
+export interface SecondBrainStatus {
+  exists: boolean;
+  cycleCount: number;
+  maxCycles: number;
+  questionsExhausted: boolean;
+  approvalStatus: 'pending' | 'approved';
+  approvedAt?: string;
+  hasSummary: boolean;
+  hasStories: boolean;
+  confidenceScore: number;
+}
+
+// ── Epic & User Stories (Excel Report) ──
+
+export interface Epic {
+  title: string;
+  description: string;
+  businessValue: string;
+  acceptanceCriteria: string[];
+}
+
+export interface UserStory {
+  id: string;
+  title: string;
+  userStory: string;
+  acceptanceCriteria: string[];
+  storyPoints: number;
+  priority: 'High' | 'Medium' | 'Low';
+  epic: string;
+  labels: string[];
+  component: string;
+  status: string;
+}
+
+export interface EpicStoriesResult {
+  epic: Epic;
+  stories: UserStory[];
+  generatedAt: string;
+  totalStoryPoints: number;
+  downloadUrl?: string;
+  filePath?: string;
 }
 
 export interface ChatMessage {

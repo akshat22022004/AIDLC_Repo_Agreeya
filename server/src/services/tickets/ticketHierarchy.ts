@@ -75,6 +75,7 @@ export async function generateTicketHierarchy(
   llm: LLMAdapter,
   analysis: AnalysisResult,
   projectId: string,
+  secondBrainContext?: string,
 ): Promise<{ reasoning: string; hierarchy: TicketHierarchyNode[] }> {
   const u = analysis.understanding;
 
@@ -94,7 +95,11 @@ ${analysis.questions
   .map((q) => `Q: ${q.question}\nA: ${Array.isArray(q.answer) ? q.answer.join(', ') : q.answer}`)
   .join('\n\n')}`;
 
-  const raw = await llm.analyze(HIERARCHY_PROMPT, context);
+  const systemPrompt = secondBrainContext
+    ? `${HIERARCHY_PROMPT}\n\n---\n\n${secondBrainContext}`
+    : HIERARCHY_PROMPT;
+
+  const raw = await llm.analyze(systemPrompt, context);
   const jsonStr = extractJson(raw);
 
   let parsed: any;

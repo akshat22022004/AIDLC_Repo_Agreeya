@@ -5,6 +5,7 @@ import DocumentList from '../components/DocumentList';
 import AgentUnderstanding from '../components/AgentUnderstanding';
 import QuestionPanel from '../components/QuestionPanel';
 import QuestionDocument from '../components/QuestionDocument';
+import ApprovalStep from '../components/ApprovalStep';
 import ChatInterface from '../components/ChatInterface';
 import TicketBrowser from '../components/TicketBrowser';
 import TicketWorkflow from '../components/TicketWorkflow';
@@ -16,7 +17,7 @@ interface HomeProps {
   projectName?: string;
 }
 
-type Step = 'upload' | 'analyzing' | 'understanding' | 'questions' | 'refined';
+type Step = 'upload' | 'analyzing' | 'understanding' | 'questions' | 'approval' | 'approved';
 type EntryPoint = 'document' | 'ticket';
 
 const STEPS: { key: Step; label: string; num: number }[] = [
@@ -24,8 +25,11 @@ const STEPS: { key: Step; label: string; num: number }[] = [
   { key: 'analyzing', label: 'Analysis', num: 2 },
   { key: 'understanding', label: 'Understanding', num: 3 },
   { key: 'questions', label: 'Q & A', num: 4 },
-  { key: 'refined', label: 'Refined', num: 5 },
+  { key: 'approval', label: 'Approval', num: 5 },
+  { key: 'approved', label: 'Generate', num: 6 },
 ];
+
+const MAX_CYCLES = 2;
 
 function getSessionId(): string {
   let id = sessionStorage.getItem('aidlc-session');
@@ -47,6 +51,11 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
   const [entryPoint, setEntryPoint] = useState<EntryPoint>('document');
   const [connectedProvider, setConnectedProvider] = useState<string | null>(null);
   const [ticketSource, setTicketSource] = useState<string | null>(null);
+  // Question-cycle budget and the human approval gate.
+  const [cycleCount, setCycleCount] = useState(0);
+  const [questionsExhausted, setQuestionsExhausted] = useState(false);
+  const [withheldReason, setWithheldReason] = useState<string | null>(null);
+  const [isApproved, setIsApproved] = useState(false);
 
   useEffect(() => {
     async function checkConnections() {
@@ -59,6 +68,23 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
     checkConnections();
   }, [sessionId]);
 
+  // Re-hydrate the cycle/approval state from the project second brain on mount.
+  useEffect(() => {
+    async function loadBrainStatus() {
+      try {
+        const status = await api.getAnalysisStatus(sessionId);
+        if (!status.exists) return;
+        setCycleCount(status.cycleCount);
+        setQuestionsExhausted(status.questionsExhausted);
+        if (status.approvalStatus === 'approved') {
+          setIsApproved(true);
+          setStep('approved');
+        }
+      } catch {}
+    }
+    loadBrainStatus();
+  }, [sessionId]);
+
   const handleFilesUploaded = useCallback(
     (uploaded: UploadedFile[]) => {
       setFiles((prev) => [...prev, ...uploaded]);
@@ -67,43 +93,50 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
     []
   );
 
-  const handleAnalyze = useCallback(async () => {
-    setIsAnalyzing(true);
-    setError(null);
-    setStep('analyzing');
-    try {
-      const result = await api.analyzeDocuments(sessionId);
-      setAnalysis(result);
-      setAnalysisRound((r) => r + 1);
-      setStep('understanding');
-    } catch (err: any) {
-      setError(err.message);
-      setStep('upload');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [sessionId]);
+  /**
+   * Runs an analysis round. The server decides whether a question cycle is still
+   * available; when it isn't, the flow moves straight to the human approval gate.
+   */
+  const runAnalysis = useCallback(
+    async (fallbackStep: Step) => {
+      setIsAnalyzing(true);
+      setError(null);
+      setWithheldReason(null);
+      setStep('analyzing');
+      try {
+        const result = await api.analyzeDocuments(sessionId);
+        setAnalysis(result);
+        setAnalysisRound((r) => r + 1);
+        setCycleCount(result.cycleCount);
+        setQuestionsExhausted(result.questionsExhausted);
+        setWithheldReason(result.questionsWithheldReason ?? null);
+        setStep(result.questions.length > 0 ? 'understanding' : 'approval');
+      } catch (err: any) {
+        setError(err.message);
+        setStep(fallbackStep);
+      } finally {
+        setIsAnalyzing(false);
+      }
+    },
+    [sessionId]
+  );
+
+  const handleAnalyze = useCallback(() => runAnalysis('upload'), [runAnalysis]);
+  const handleReanalyze = useCallback(() => runAnalysis('understanding'), [runAnalysis]);
 
   const handleQuestionsUpdated = useCallback((updated: AnalysisResult) => {
     setAnalysis(updated);
   }, []);
 
-  const handleReanalyze = useCallback(async () => {
-    setIsAnalyzing(true);
+  const handleProceedToApproval = useCallback(() => {
     setError(null);
-    setStep('analyzing');
-    try {
-      const result = await api.analyzeDocuments(sessionId);
-      setAnalysis(result);
-      setAnalysisRound((r) => r + 1);
-      setStep(result.confidenceScore >= 90 ? 'refined' : 'understanding');
-    } catch (err: any) {
-      setError(err.message);
-      setStep('understanding');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [sessionId]);
+    setStep('approval');
+  }, []);
+
+  const handleApproved = useCallback(() => {
+    setIsApproved(true);
+    setStep('approved');
+  }, []);
 
   const handleWorkOnTicket = useCallback(async (ticket: Ticket) => {
     setError(null);
@@ -312,51 +345,109 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
                 <AgentUnderstanding
                   analysis={analysis}
                   round={analysisRound}
-                  onProceedToQuestions={() => setStep('questions')}
+                  onProceedToQuestions={() =>
+                    setStep(analysis.questions.length > 0 ? 'questions' : 'approval')
+                  }
                 />
               </section>
             )}
 
             {/* Step 4: Questions */}
-            {analysis && (step === 'questions' || step === 'refined') && !isAnalyzing && (
+            {analysis && analysis.questions.length > 0 && step === 'questions' && !isAnalyzing && (
               <section className="animate-slide-up">
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                     <div>
                       <h2 className="text-lg font-semibold text-slate-800">
-                        {analysisRound > 1 ? '4. Follow-up Questions' : '4. Clarifying Questions'}
+                        {cycleCount > 1 ? '4. Final Follow-up Questions' : '4. Clarifying Questions'}
                       </h2>
                       <p className="text-sm text-slate-500 mt-0.5">
-                        Answer these questions to improve the agent's understanding
+                        {cycleCount > 1
+                          ? 'This is the last question cycle — after these answers the agent proceeds with what it knows'
+                          : 'The agent asks everything it needs in one batch. It gets at most one more cycle after this.'}
                       </p>
                     </div>
                     <QuestionDocument sessionId={sessionId} analysis={analysis} onImported={handleQuestionsUpdated} />
                   </div>
+
+                  <div className="px-6 pt-4">
+                    <div
+                      className={`rounded-lg border px-4 py-2.5 text-sm ${
+                        questionsExhausted
+                          ? 'bg-slate-50 border-slate-200 text-slate-600'
+                          : 'bg-indigo-50 border-indigo-200 text-indigo-800'
+                      }`}
+                    >
+                      <strong>Question cycle {Math.max(1, cycleCount)} of {MAX_CYCLES}.</strong>{' '}
+                      {questionsExhausted
+                        ? 'No further question cycles remain — anything left unclear will be recorded as an assumption for your review.'
+                        : `If the agent is still under 70% confident after these answers, it gets one final cycle of up to 3 questions.`}
+                    </div>
+                  </div>
+
                   <div className="p-6">
                     <QuestionPanel
                       sessionId={sessionId}
                       analysis={analysis}
                       onUpdated={handleQuestionsUpdated}
                     />
-                    <div className="mt-6 flex justify-end">
+                    <div className="mt-6 flex flex-wrap justify-end gap-3">
                       <button
-                        onClick={handleReanalyze}
-                        className="px-6 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium text-sm transition-colors"
+                        onClick={handleProceedToApproval}
+                        className="px-6 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-medium text-sm transition-colors"
                       >
-                        Re-analyze with Answers
+                        Proceed to Approval
                       </button>
+                      {!questionsExhausted ? (
+                        <button
+                          onClick={handleReanalyze}
+                          className="px-6 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium text-sm transition-colors"
+                        >
+                          Re-analyze with Answers
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleReanalyze}
+                          className="px-6 py-2.5 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium text-sm transition-colors"
+                        >
+                          Finalize Understanding
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
               </section>
             )}
 
-            {/* Step 5: Ticket Creation */}
-            {analysis && (step === 'questions' || step === 'refined') && !isAnalyzing && (
+            {/* Questions withheld — the cycle budget is spent */}
+            {analysis && analysis.questions.length === 0 && withheldReason && !isAnalyzing && (
+              <section className="animate-slide-up">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-4">
+                  <p className="text-sm text-slate-700">
+                    <strong className="text-slate-900">No further questions.</strong>{' '}
+                    {withheldReason}
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {/* Step 5: Human Approval */}
+            {analysis && (step === 'approval' || step === 'approved') && !isAnalyzing && (
+              <section className="animate-slide-up">
+                <ApprovalStep
+                  sessionId={sessionId}
+                  onApproved={handleApproved}
+                  onOpenRequirements={onNavigateToRequirements}
+                />
+              </section>
+            )}
+
+            {/* Step 6: Ticket Creation — unlocked by approval */}
+            {analysis && step === 'approved' && isApproved && !isAnalyzing && (
               <section className="animate-slide-up">
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
-                    <h2 className="text-lg font-semibold text-slate-800">5. Create Tickets</h2>
+                    <h2 className="text-lg font-semibold text-slate-800">6. Create Tickets</h2>
                     <p className="text-sm text-slate-500 mt-0.5">
                       Generate and create work items in your project management tool
                     </p>
@@ -368,26 +459,28 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
               </section>
             )}
 
-            {/* Step 6: Generate Requirements */}
-            {analysis && (step === 'questions' || step === 'refined') && !isAnalyzing && (
+            {/* Step 7: Generate Requirements — unlocked by approval */}
+            {analysis && !isAnalyzing && (step === 'approval' || step === 'approved') && (
               <section className="animate-slide-up">
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
-                    <h2 className="text-lg font-semibold text-slate-800">6. Generate Requirements</h2>
+                    <h2 className="text-lg font-semibold text-slate-800">7. Generate Requirements</h2>
                     <p className="text-sm text-slate-500 mt-0.5">
                       Build a formal requirements document section-by-section with AI
                     </p>
                   </div>
                   <div className="p-6 text-center">
                     <p className="text-sm text-slate-600 mb-4">
-                      Generate a comprehensive 15-section requirement document from your uploaded documents and Q&A answers.
+                      Generate a comprehensive 15-section requirement document from your project
+                      second brain — every document, every answer, and your approved understanding.
                       You'll review and approve each section individually.
                     </p>
                     <button
                       onClick={onNavigateToRequirements}
-                      className="px-6 py-3 bg-accent hover:bg-accent-hover text-white rounded-lg font-medium text-sm transition-colors"
+                      disabled={!isApproved}
+                      className="px-6 py-3 bg-accent hover:bg-accent-hover disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-colors"
                     >
-                      Open Requirements Builder
+                      {isApproved ? 'Open Requirements Builder' : '🔒 Approve your understanding first'}
                     </button>
                   </div>
                 </div>

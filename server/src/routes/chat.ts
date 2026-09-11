@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sessions, getLLM, chatHistories } from '../state.js';
 import { CHAT_SYSTEM_PROMPT } from '../prompts/questionGeneration.js';
+import { buildSecondBrainContextBlock } from '../services/secondBrain.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -62,7 +63,13 @@ router.post('/:sessionId', async (req, res) => {
 
     history.push({ role: 'user', content: userMessage });
 
-    const response = await llm.chat(CHAT_SYSTEM_PROMPT, history);
+    // Every LLM call in the system carries the Second Brain and its rules.
+    const secondBrain = buildSecondBrainContextBlock(sessionId);
+    const systemPrompt = secondBrain
+      ? `${CHAT_SYSTEM_PROMPT}\n\n---\n\n${secondBrain}`
+      : CHAT_SYSTEM_PROMPT;
+
+    const response = await llm.chat(systemPrompt, history);
     history.push({ role: 'model', content: response });
 
     res.json({ success: true, data: { reply: response } });

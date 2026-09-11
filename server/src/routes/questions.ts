@@ -1,7 +1,69 @@
 import { Router } from 'express';
 import { sessions } from '../state.js';
+import * as brain from '../services/secondBrain.js';
+import { MAX_QUESTION_CYCLES } from '../services/secondBrain.js';
+import type { ClarifyingQuestion, QnaRecord, Session } from '../types/index.js';
 
 const router = Router();
+
+function formatAnswer(answer: string | string[] | undefined): string {
+  if (answer === undefined) return '';
+  return Array.isArray(answer) ? answer.join(', ') : String(answer);
+}
+
+/**
+ * The cycle a question belongs to is the 1-based index of the analysis round that
+ * produced it, capped at the maximum so a stray extra round can't invent a cycle 3.
+ */
+function cycleForAnalysisIndex(index: number): number {
+  return Math.min(index + 1, MAX_QUESTION_CYCLES);
+}
+
+function toRecord(question: ClarifyingQuestion, cycle: number): QnaRecord {
+  return {
+    cycle,
+    questionId: question.id,
+    question: question.question,
+    category: question.category,
+    priority: question.priority,
+    answer: formatAnswer(question.answer),
+    answeredAt: new Date().toISOString(),
+  };
+}
+
+/** Push every answered question in the session into the Second Brain. */
+function syncAnswersToBrain(session: Session) {
+  const records: QnaRecord[] = [];
+  session.analyses.forEach((analysis, index) => {
+    const cycle = cycleForAnalysisIndex(index);
+    for (const q of analysis.questions) {
+      if (q.status === 'answered' && formatAnswer(q.answer).trim()) {
+        records.push(toRecord(q, cycle));
+      }
+    }
+  });
+  if (records.length > 0) brain.recordAnswers(session.id, records);
+}
+
+/** True once every question in the latest round has been answered or skipped. */
+function roundComplete(session: Session): boolean {
+  const latest = session.analyses[session.analyses.length - 1];
+  return latest.questions.every((q) => q.status !== 'pending');
+}
+
+function answerState(session: Session) {
+  const status = brain.getStatus(session.id);
+  const complete = roundComplete(session);
+  return {
+    cycleCount: status.cycleCount,
+    maxCycles: MAX_QUESTION_CYCLES,
+    questionsExhausted: status.questionsExhausted,
+    roundComplete: complete,
+    /** The UI moves to the approval gate when no further questions are possible. */
+    readyForApproval: complete && status.questionsExhausted,
+    approvalStatus: status.approvalStatus,
+  };
+}
 
 router.get('/:sessionId', (req, res) => {
   const session = sessions.get(req.params.sessionId);
@@ -37,7 +99,11 @@ router.post('/:sessionId/answer', (req, res) => {
   question.status = 'answered';
   session.currentStep = 'questions';
 
-  res.json({ success: true, data: question });
+  brain.recordAnswers(session.id, [
+    toRecord(question, cycleForAnalysisIndex(session.analyses.length - 1)),
+  ]);
+
+  res.json({ success: true, data: { question, ...answerState(session) } });
 });
 
 router.post('/:sessionId/answer-bulk', (req, res) => {
@@ -64,7 +130,9 @@ router.post('/:sessionId/answer-bulk', (req, res) => {
   }
 
   session.currentStep = 'questions';
-  res.json({ success: true, data: latest.questions });
+  syncAnswersToBrain(session);
+
+  res.json({ success: true, data: { questions: latest.questions, ...answerState(session) } });
 });
 
 router.post('/:sessionId/skip', (req, res) => {
@@ -83,7 +151,13 @@ router.post('/:sessionId/skip', (req, res) => {
   }
 
   question.status = 'skipped';
-  res.json({ success: true, data: question });
+  // A skipped question is an open item, not a confirmed fact.
+  brain.updateBrain(session.id, (b) => {
+    const item = `Unanswered (skipped by user): ${question.question}`;
+    if (!b.openItems.includes(item)) b.openItems.push(item);
+  });
+
+  res.json({ success: true, data: { question, ...answerState(session) } });
 });
 
 router.post('/:sessionId/import-answers', (req, res) => {
@@ -118,7 +192,12 @@ router.post('/:sessionId/import-answers', (req, res) => {
     }
   }
 
-  res.json({ success: true, data: { importedCount: count, questions: latest.questions } });
+  if (count > 0) syncAnswersToBrain(session);
+
+  res.json({
+    success: true,
+    data: { importedCount: count, questions: latest.questions, ...answerState(session) },
+  });
 });
 
 export default router;

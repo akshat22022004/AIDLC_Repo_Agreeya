@@ -18,6 +18,8 @@ import architectureRouter from './routes/architecture.js';
 import designRouter from './routes/design.js';
 import testsRouter from './routes/tests.js';
 import releaseRouter from './routes/release.js';
+import approvalRouter from './routes/approval.js';
+import excelReportRouter from './routes/excelReport.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -40,6 +42,10 @@ app.use('/api/connections', connectionsRouter);
 app.use('/api/tickets', ticketsRouter);
 app.use('/api/requirements', requirementsRouter);
 app.use('/api/git', gitRouter);
+// Approval + Excel report hang off /api/projects/:sessionId/... — mounted after the
+// projects router, which has no matching routes and so falls through to these.
+app.use('/api/projects', approvalRouter);
+app.use('/api/projects', excelReportRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/architecture', architectureRouter);
 app.use('/api/design', designRouter);

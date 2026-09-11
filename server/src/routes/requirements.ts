@@ -16,6 +16,7 @@ import {
   finalizeRequirement,
 } from '../services/requirementStore.js';
 import { updateProject } from '../services/projectStore.js';
+import { buildSecondBrainContextBlock, getStatus } from '../services/secondBrain.js';
 
 const router = Router();
 
@@ -42,6 +43,17 @@ router.post('/:sessionId/init', async (req, res) => {
     const existing = getLatestRequirement(sessionId);
     if (existing && existing.status === 'in-progress') {
       res.json({ success: true, data: existing });
+      return;
+    }
+
+    // Human-in-the-loop gate: requirements may only be generated from an
+    // understanding a human has signed off on.
+    const brainStatus = getStatus(sessionId);
+    if (brainStatus.exists && brainStatus.approvalStatus !== 'approved') {
+      res.status(403).json({
+        success: false,
+        error: 'The project understanding must be approved by a human before requirements can be generated.',
+      });
       return;
     }
 
@@ -115,6 +127,7 @@ router.post('/:sessionId/:reqId/generate', async (req, res) => {
     const sectionContext: SectionContext = {
       parsedDocuments: contentParts.join('\n\n'),
       qnaAnswers: answeredQs,
+      secondBrainContext: buildSecondBrainContextBlock(sessionId),
       previousSections,
       userFeedback: feedback || undefined,
       sourceFileNames: doc.sourceDocuments,

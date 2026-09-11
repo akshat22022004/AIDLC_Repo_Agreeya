@@ -6,10 +6,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { LLMAdapter } from './adapter.js';
 
 const MODEL_FALLBACK_CHAIN = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-pro',
   'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-flash-latest',
+  'gemini-pro-latest',
 ];
 
 const REQUEST_OPTIONS = {};

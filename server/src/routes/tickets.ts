@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getAdapter } from '../services/connectionStore.js';
-import { sessions, getLLM } from '../state.js';
+import { sessions, getLLM, getOrCreateSession } from '../state.js';
+import { initSecondBrain, buildSecondBrainContextBlock } from '../services/secondBrain.js';
 import { generateTicketHierarchy, countTickets } from '../services/tickets/ticketHierarchy.js';
 import type { TicketProviderAdapter } from '../services/tickets/adapter.js';
 import type { TicketHierarchyNode, CreatedTicket, TicketCreationSummary } from '../types/index.js';
@@ -91,8 +92,7 @@ router.post('/:sessionId/work-on/:ticketId', async (req, res) => {
     ].filter(Boolean).join('\n');
 
     // Store as a virtual parsed file in the session
-    const session = sessions.get(sessionId);
-    if (!session) { res.status(404).json({ success: false, error: 'Session not found' }); return; }
+    const session = getOrCreateSession(sessionId);
 
     const fs = await import('fs/promises');
     const path = await import('path');
@@ -107,6 +107,8 @@ router.post('/:sessionId/work-on/:ticketId', async (req, res) => {
       size: docContent.length,
       status: 'ready',
     });
+
+    initSecondBrain(sessionId, { documents: [`${ticket.key}: ${ticket.title} (ticket)`] });
 
     res.json({ success: true, data: { ticket, injected: true } });
   } catch (err: any) {
@@ -131,7 +133,12 @@ router.post('/:sessionId/generate-hierarchy', async (req, res) => {
     if (!llm) { res.status(500).json({ success: false, error: 'No LLM configured' }); return; }
 
     const latestAnalysis = session.analyses[session.analyses.length - 1];
-    const result = await generateTicketHierarchy(llm, latestAnalysis, projectId);
+    const result = await generateTicketHierarchy(
+      llm,
+      latestAnalysis,
+      projectId,
+      buildSecondBrainContextBlock(sessionId)
+    );
 
     res.json({ success: true, data: result });
   } catch (err: any) {

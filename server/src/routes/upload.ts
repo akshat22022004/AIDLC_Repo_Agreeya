@@ -3,7 +3,8 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { parseFile } from '../services/parser.js';
-import { sessions } from '../state.js';
+import { sessions, getOrCreateSession } from '../state.js';
+import { initSecondBrain } from '../services/secondBrain.js';
 import type { UploadedFile } from '../types/index.js';
 
 const UPLOAD_DIR = path.resolve('uploads');
@@ -42,17 +43,11 @@ router.post('/:sessionId', upload.array('files', 20), async (req, res) => {
       return;
     }
 
-    let session = sessions.get(sessionId);
-    if (!session) {
-      session = {
-        id: sessionId,
-        createdAt: new Date().toISOString(),
-        files: [],
-        analyses: [],
-        currentStep: 'upload',
-      };
-      sessions.set(sessionId, session);
-    }
+    const session = getOrCreateSession(sessionId);
+
+    // The Second Brain is created with the very first upload and lives for the
+    // whole project from here on.
+    initSecondBrain(sessionId, { documents: files.map((f) => f.originalname) });
 
     const uploadedFiles: UploadedFile[] = [];
 
