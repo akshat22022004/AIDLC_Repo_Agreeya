@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getAdapter } from '../services/connectionStore.js';
-import { sessions, getLLM, getOrCreateSession } from '../state.js';
+import { getLLM, getOrCreateSession, loadSession, saveSession } from '../state.js';
 import { initSecondBrain, buildSecondBrainContextBlock } from '../services/secondBrain.js';
 import { generateTicketHierarchy, countTickets } from '../services/tickets/ticketHierarchy.js';
 import type { TicketProviderAdapter } from '../services/tickets/adapter.js';
@@ -10,6 +10,16 @@ const router = Router();
 
 function getProvider(req: any): string {
   return (req.query.provider as string) || (req.body?.provider as string) || 'jira';
+}
+
+/**
+ * Provider connections belong to the workspace, project content belongs to the
+ * project. `:sessionId` addresses the connection; `targetSessionId` names the project
+ * session the ticket should be filed into, so browsing tickets with a shared
+ * connection can never write into the wrong project's context.
+ */
+function getTargetSessionId(req: any, fallback: string): string {
+  return (req.query.targetSessionId as string) || (req.body?.targetSessionId as string) || fallback;
 }
 
 // List projects
@@ -72,6 +82,7 @@ router.get('/:sessionId/ticket/:ticketId', async (req, res) => {
 router.post('/:sessionId/work-on/:ticketId', async (req, res) => {
   try {
     const { sessionId, ticketId } = req.params;
+    const targetSessionId = getTargetSessionId(req, sessionId);
     const adapter = await getAdapter(sessionId, getProvider(req));
     if (!adapter) { res.status(400).json({ success: false, error: 'Provider not connected' }); return; }
 
@@ -91,8 +102,8 @@ router.post('/:sessionId/work-on/:ticketId', async (req, res) => {
       ticket.labels.length ? `**Labels:** ${ticket.labels.join(', ')}` : '',
     ].filter(Boolean).join('\n');
 
-    // Store as a virtual parsed file in the session
-    const session = getOrCreateSession(sessionId);
+    // Store as a virtual parsed file in the project's own session
+    const session = getOrCreateSession(targetSessionId);
 
     const fs = await import('fs/promises');
     const path = await import('path');
@@ -108,7 +119,8 @@ router.post('/:sessionId/work-on/:ticketId', async (req, res) => {
       status: 'ready',
     });
 
-    initSecondBrain(sessionId, { documents: [`${ticket.key}: ${ticket.title} (ticket)`] });
+    initSecondBrain(targetSessionId, { documents: [`${ticket.key}: ${ticket.title} (ticket)`] });
+    saveSession(session);
 
     res.json({ success: true, data: { ticket, injected: true } });
   } catch (err: any) {
@@ -123,7 +135,7 @@ router.post('/:sessionId/generate-hierarchy', async (req, res) => {
     const { projectId } = req.body;
     if (!projectId) { res.status(400).json({ success: false, error: 'projectId required' }); return; }
 
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (!session || session.analyses.length === 0) {
       res.status(404).json({ success: false, error: 'No analysis found' });
       return;

@@ -250,7 +250,7 @@ export default function DesignBuilder({
       {view === 'export' && (
         <div className="max-w-2xl mx-auto px-6 py-6">
           <DesignExport
-            projectId={projectId} designId={doc.id} sessionId={sessionId}
+            projectId={projectId} designId={doc.id}
             onFinalized={() => setDoc((prev) => prev ? { ...prev, status: 'finalized' } : prev)}
             onGenerateTestCases={onGenerateTestCases ? () => onGenerateTestCases(requirementId, architectureId, doc.id) : undefined}
           />

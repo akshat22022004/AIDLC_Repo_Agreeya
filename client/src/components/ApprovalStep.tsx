@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { UnderstandingSummary } from '../types';
 import * as api from '../services/api';
+import * as phaseApi from '../services/phaseApi';
 import ExcelDownload from './ExcelDownload';
 
 interface Props {
@@ -8,7 +10,29 @@ interface Props {
   /** Called once the human has signed off, so the parent can unlock downstream steps. */
   onApproved: () => void;
   onOpenRequirements?: () => void;
+  /**
+   * Which phase is being approved. Omitted for the requirement phase, which keeps
+   * using its own routes; any other phase approves through the phase engine.
+   */
+  phaseId?: string;
+  /** Copy overrides so the same gate reads correctly for any phase. */
+  heading?: string;
+  subheading?: string;
+  approveLabel?: string;
+  /** What approval unlocks, in words the phase's reviewer would use. */
+  unlockedLabel?: string;
+  nextActionLabel?: string;
+  /** Replaces the requirement phase's Excel panel with this phase's deliverables. */
+  deliverables?: ReactNode;
 }
+
+/** One shape for both entry points, so the component never has to know which it used. */
+type ApprovalLike = {
+  summary: UnderstandingSummary | null;
+  approvalStatus: 'pending' | 'approved';
+  approvedAt?: string;
+  humanInputs: { text: string; at: string }[];
+};
 
 function ConfidenceBar({ score }: { score: number }) {
   const color = score >= 80 ? 'bg-emerald-500' : score >= 50 ? 'bg-amber-500' : 'bg-red-500';
@@ -82,7 +106,18 @@ function SectionHeading({
   );
 }
 
-export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements }: Props) {
+export default function ApprovalStep({
+  sessionId,
+  onApproved,
+  onOpenRequirements,
+  phaseId,
+  heading = '5. Human Approval',
+  subheading = 'Here is my complete understanding of your project — review it before anything is generated',
+  approveLabel = '✓ Approve & Generate Requirements',
+  unlockedLabel = 'Requirements generation and the Epic & Stories Excel report are now unlocked.',
+  nextActionLabel = 'Generate Requirements',
+  deliverables,
+}: Props) {
   const [summary, setSummary] = useState<UnderstandingSummary | null>(null);
   const [approvalStatus, setApprovalStatus] = useState<'pending' | 'approved'>('pending');
   const [approvedAt, setApprovedAt] = useState<string | undefined>();
@@ -93,26 +128,40 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
   const [busy, setBusy] = useState<null | 'summary' | 'add-info' | 'approve'>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const applyState = useCallback((state: api.ApprovalState) => {
+  const applyState = useCallback((state: ApprovalLike) => {
     setSummary(state.summary);
     setApprovalStatus(state.approvalStatus);
     setApprovedAt(state.approvedAt);
     setHumanInputCount(state.humanInputs.length);
   }, []);
 
+  const loadApproval = useCallback(
+    (): Promise<ApprovalLike> =>
+      phaseId ? phaseApi.getPhaseApproval(phaseId, sessionId) : api.getApproval(sessionId),
+    [phaseId, sessionId]
+  );
+
+  const requestSummary = useCallback(
+    (force = false): Promise<ApprovalLike> =>
+      phaseId
+        ? phaseApi.generatePhaseApproval(phaseId, sessionId, force)
+        : api.generateApprovalSummary(sessionId, force),
+    [phaseId, sessionId]
+  );
+
   // On mount: load an existing summary, or generate one if this is the first visit.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const existing = await api.getApproval(sessionId);
+        const existing = await loadApproval();
         if (cancelled) return;
         if (existing.summary) {
           applyState(existing);
           setLoading(false);
           return;
         }
-        const generated = await api.generateApprovalSummary(sessionId);
+        const generated = await requestSummary();
         if (cancelled) return;
         applyState(generated);
       } catch (err: any) {
@@ -124,19 +173,19 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
     return () => {
       cancelled = true;
     };
-  }, [sessionId, applyState]);
+  }, [sessionId, applyState, loadApproval, requestSummary]);
 
   const handleRegenerate = useCallback(async () => {
     setBusy('summary');
     setError(null);
     try {
-      applyState(await api.generateApprovalSummary(sessionId, true));
+      applyState(await requestSummary(true));
     } catch (err: any) {
       setError(err.message);
     } finally {
       setBusy(null);
     }
-  }, [sessionId, applyState]);
+  }, [applyState, requestSummary]);
 
   const handleAddInfo = useCallback(async () => {
     if (!additionalInfo.trim()) {
@@ -146,7 +195,11 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
     setBusy('add-info');
     setError(null);
     try {
-      applyState(await api.addApprovalInfo(sessionId, additionalInfo.trim()));
+      applyState(
+        phaseId
+          ? await phaseApi.addPhaseApprovalInfo(phaseId, sessionId, additionalInfo.trim())
+          : await api.addApprovalInfo(sessionId, additionalInfo.trim())
+      );
       setAdditionalInfo('');
       setShowInfoBox(false);
     } catch (err: any) {
@@ -154,16 +207,16 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
     } finally {
       setBusy(null);
     }
-  }, [sessionId, additionalInfo, applyState]);
+  }, [sessionId, additionalInfo, applyState, phaseId]);
 
   const handleApprove = useCallback(async () => {
     setBusy('approve');
     setError(null);
     try {
-      const state = await api.approveUnderstanding(
-        sessionId,
-        additionalInfo.trim() || undefined
-      );
+      const trimmed = additionalInfo.trim() || undefined;
+      const state = phaseId
+        ? await phaseApi.approvePhase(phaseId, sessionId, trimmed)
+        : await api.approveUnderstanding(sessionId, trimmed);
       applyState(state);
       setAdditionalInfo('');
       setShowInfoBox(false);
@@ -173,7 +226,7 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
     } finally {
       setBusy(null);
     }
-  }, [sessionId, additionalInfo, applyState, onApproved]);
+  }, [sessionId, additionalInfo, applyState, onApproved, phaseId]);
 
   const isApproved = approvalStatus === 'approved';
 
@@ -181,11 +234,8 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">5. Human Approval</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Here is my complete understanding of your project — review it before anything is
-            generated
-          </p>
+          <h2 className="text-lg font-semibold text-slate-800">{heading}</h2>
+          <p className="text-sm text-slate-500 mt-0.5">{subheading}</p>
         </div>
         {isApproved ? (
           <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">
@@ -294,7 +344,7 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
               <SectionHeading
                 title="Open Items"
                 count={summary.openItems.length}
-                hint="Still unclear — will be carried into the requirements"
+                hint="Still unclear — will be carried into the generated document"
               />
               <FactList
                 items={summary.openItems}
@@ -344,7 +394,7 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
                   disabled={busy !== null}
                   className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-semibold text-sm transition-colors"
                 >
-                  {busy === 'approve' ? 'Approving...' : '✓ Approve & Generate Requirements'}
+                  {busy === 'approve' ? 'Approving...' : approveLabel}
                 </button>
                 <button
                   onClick={handleAddInfo}
@@ -377,10 +427,7 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
                   <p className="text-sm text-emerald-800 font-medium">
                     Understanding approved{approvedAt ? ` on ${new Date(approvedAt).toLocaleString()}` : ''}.
                   </p>
-                  <p className="text-xs text-emerald-700 mt-0.5">
-                    Requirements generation and the Epic &amp; Stories Excel report are now
-                    unlocked.
-                  </p>
+                  <p className="text-xs text-emerald-700 mt-0.5">{unlockedLabel}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
@@ -389,7 +436,7 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
                       onClick={onOpenRequirements}
                       className="px-6 py-3 bg-accent hover:bg-accent-hover text-white rounded-lg font-semibold text-sm transition-colors"
                     >
-                      Generate Requirements
+                      {nextActionLabel}
                     </button>
                   )}
                   <button
@@ -409,7 +456,7 @@ export default function ApprovalStep({ sessionId, onApproved, onOpenRequirements
                   )}
                 </div>
 
-                <ExcelDownload sessionId={sessionId} approved={isApproved} />
+                {deliverables ?? <ExcelDownload sessionId={sessionId} approved={isApproved} />}
               </div>
             )}
           </>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { GitRepoConfig, CommitResult, PullRequest } from '../types';
 import CommitDialog from './CommitDialog';
+import ExcelDownload from './ExcelDownload';
 import * as api from '../services/api';
 
 interface Props {
@@ -18,12 +19,19 @@ export default function RequirementExport({ sessionId, reqId, projectId, onFinal
   const [gitConfig, setGitConfig] = useState<GitRepoConfig | null>(null);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitResult, setCommitResult] = useState<{ commit: CommitResult; pr?: PullRequest } | null>(null);
+  const [approved, setApproved] = useState(false);
 
   useEffect(() => {
     if (projectId) {
       api.getGitConfig(projectId).then(setGitConfig).catch(() => {});
     }
   }, [projectId]);
+
+  useEffect(() => {
+    api.getAnalysisStatus(sessionId)
+      .then((status) => setApproved(status.approvalStatus === 'approved'))
+      .catch(() => {});
+  }, [sessionId]);
 
   const handleFinalize = async () => {
     setFinalizing(true);
@@ -112,7 +120,6 @@ export default function RequirementExport({ sessionId, reqId, projectId, onFinal
 
         {showCommitDialog && gitConfig && finalized.markdown && (
           <CommitDialog
-            sessionId={sessionId}
             config={gitConfig}
             filePath={`${gitConfig.basePath || 'aidlc'}/requirements/${reqId}.md`}
             content={finalized.markdown}
@@ -122,6 +129,8 @@ export default function RequirementExport({ sessionId, reqId, projectId, onFinal
             onCancel={() => setShowCommitDialog(false)}
           />
         )}
+
+        {!showCommitDialog && <ExcelDownload sessionId={sessionId} approved={approved} />}
 
         {onGenerateArchitecture && !showCommitDialog && (
           <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
@@ -153,6 +162,8 @@ export default function RequirementExport({ sessionId, reqId, projectId, onFinal
             Download as Markdown (.md)
           </a>
         </div>
+
+        <ExcelDownload sessionId={sessionId} approved={approved} />
 
         <div className="border-t border-slate-200 pt-4">
           <p className="text-sm text-slate-600 mb-3">

@@ -1,9 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
-import type { ArchitectureDoc } from '../types';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import type { ArchitectureDoc, DiagramStatus } from '../types';
 import SectionEditor from '../components/SectionEditor';
 import SectionNavigator from '../components/SectionNavigator';
 import ArchitecturePreview from '../components/ArchitecturePreview';
 import ArchitectureExport from '../components/ArchitectureExport';
+import DiagramStep from '../components/DiagramStep';
+import type { DiagramApi } from '../components/DiagramStep';
 import * as api from '../services/api';
 
 interface Props {
@@ -15,7 +17,14 @@ interface Props {
   onGenerateDesign?: (reqId: string, archId: string) => void;
 }
 
-type View = 'editor' | 'preview' | 'export';
+type View = 'editor' | 'diagram' | 'preview' | 'export';
+
+const VIEWS: { key: View; label: string }[] = [
+  { key: 'editor', label: 'Editor' },
+  { key: 'diagram', label: 'Diagram' },
+  { key: 'preview', label: 'Preview' },
+  { key: 'export', label: 'Export' },
+];
 
 export default function ArchitectureBuilder({ projectId, sessionId, requirementId, architectureId, onBack, onGenerateDesign }: Props) {
   const [doc, setDoc] = useState<ArchitectureDoc | null>(null);
@@ -26,6 +35,7 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
   const [loading, setLoading] = useState(true);
   const [reqExpanded, setReqExpanded] = useState(false);
   const [reqMarkdown, setReqMarkdown] = useState<string | null>(null);
+  const [diagramStatus, setDiagramStatus] = useState<DiagramStatus>('none');
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +52,15 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
           setDoc(result);
           const first = result.sections.find((s) => s.status !== 'approved' && s.status !== 'skipped');
           if (first) setActiveSection(first.number);
+        }
+
+        // Read where the diagram stands up front, so the Export tab's nudge is
+        // right even if the user never opens the Diagram tab.
+        try {
+          const diagram = await api.getArchitectureDiagram(projectId, result.id);
+          if (!cancelled) setDiagramStatus(diagram.status);
+        } catch {
+          // A project with no session has no diagram — not an error worth showing.
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message);
@@ -144,6 +163,17 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
     }
   }, [sessionId, requirementId, reqMarkdown, reqExpanded]);
 
+  const diagramApi: DiagramApi | null = useMemo(() => {
+    if (!doc) return null;
+    return {
+      load: () => api.getArchitectureDiagram(projectId, doc.id),
+      generate: (feedback) => api.generateArchitectureDiagram(projectId, doc.id, feedback),
+      save: (mermaid) => api.saveArchitectureDiagram(projectId, doc.id, mermaid),
+      approve: (mermaid) => api.approveArchitectureDiagram(projectId, doc.id, mermaid),
+      skip: () => api.skipArchitectureDiagram(projectId, doc.id),
+    };
+  }, [projectId, doc]);
+
   const allDone = doc?.sections.every((s) => s.status === 'approved' || s.status === 'skipped');
 
   if (loading) {
@@ -195,30 +225,22 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
 
           <div className="flex items-center gap-2">
             <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-              <button
-                onClick={() => setView('editor')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  view === 'editor' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Editor
-              </button>
-              <button
-                onClick={() => setView('preview')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  view === 'preview' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Preview
-              </button>
-              <button
-                onClick={() => setView('export')}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  view === 'export' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Export
-              </button>
+              {VIEWS.map((v) => (
+                <button
+                  key={v.key}
+                  onClick={() => setView(v.key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    view === v.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {v.label}
+                  {v.key === 'diagram' && diagramStatus === 'approved' && (
+                    <span className="ml-1 text-emerald-500" aria-hidden="true">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
 
             {!allDone && (
@@ -307,12 +329,21 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
                   All Sections Complete
                 </h3>
                 <p className="text-sm text-emerald-600 mb-4">
-                  Review the full architecture document in Preview, then export.
+                  Recommended next: generate the architecture diagram. Then review the full
+                  document in Preview and export.
                 </p>
-                <div className="flex items-center justify-center gap-3">
+                <div className="flex items-center justify-center gap-3 flex-wrap">
+                  <button
+                    onClick={() => setView('diagram')}
+                    className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {diagramStatus === 'approved'
+                      ? 'Review Architecture Diagram'
+                      : 'Generate Architecture Diagram'}
+                  </button>
                   <button
                     onClick={() => setView('preview')}
-                    className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+                    className="px-5 py-2 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium transition-colors"
                   >
                     View Full Document
                   </button>
@@ -329,6 +360,44 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
         </div>
       )}
 
+      {/* Diagram View */}
+      {view === 'diagram' && diagramApi && (
+        <div className="max-w-6xl mx-auto px-6 py-6">
+          <DiagramStep
+            api={diagramApi}
+            resetKey={`${projectId}:${doc.id}`}
+            title="Architecture Diagram"
+            fileName={`${doc.id}-architecture-diagram`}
+            onChange={(next) => setDiagramStatus(next.status)}
+            footer={
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center justify-between gap-4 flex-wrap">
+                <p className="text-sm text-slate-600">
+                  {diagramStatus === 'approved'
+                    ? 'Approved — embedded in the document as Section 14.'
+                    : diagramStatus === 'skipped'
+                    ? 'Skipped — the document will be finalized without a diagram.'
+                    : 'Approve or skip the diagram before finalizing.'}
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setView('preview')}
+                    className="px-4 py-2 text-sm text-slate-500 hover:text-slate-800 underline"
+                  >
+                    View full document
+                  </button>
+                  <button
+                    onClick={() => setView('export')}
+                    className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Continue to Export →
+                  </button>
+                </div>
+              </div>
+            }
+          />
+        </div>
+      )}
+
       {/* Preview View */}
       {view === 'preview' && (
         <div className="max-w-4xl mx-auto px-6 py-6">
@@ -342,7 +411,8 @@ export default function ArchitectureBuilder({ projectId, sessionId, requirementI
           <ArchitectureExport
             projectId={projectId}
             archId={doc.id}
-            sessionId={sessionId}
+            diagramStatus={diagramStatus}
+            onOpenDiagram={() => setView('diagram')}
             onFinalized={() => {
               setDoc((prev) => prev ? { ...prev, status: 'finalized' } : prev);
             }}

@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { sessions } from '../state.js';
+import { loadSession } from '../state.js';
 
 const router = Router();
 
 router.get('/:sessionId/questions', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;
@@ -55,7 +55,7 @@ router.get('/:sessionId/questions', (req, res) => {
 });
 
 router.get('/:sessionId/understanding', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;

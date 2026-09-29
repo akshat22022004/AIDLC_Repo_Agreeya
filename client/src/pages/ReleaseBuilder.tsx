@@ -248,7 +248,7 @@ export default function ReleaseBuilder({
       {view === 'export' && (
         <div className="max-w-2xl mx-auto px-6 py-6">
           <ReleaseExport
-            projectId={projectId} releaseId={doc.id} sessionId={sessionId}
+            projectId={projectId} releaseId={doc.id}
             onFinalized={() => setDoc((prev) => prev ? { ...prev, status: 'finalized' } : prev)}
           />
         </div>

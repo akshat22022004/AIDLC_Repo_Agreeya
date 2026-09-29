@@ -5,7 +5,8 @@ export interface ApprovalPromptContext {
   latestHumanInput?: string;
 }
 
-const BASE = `You are an Enterprise Requirements Analyst for the AIDLC (AI Delivery Lifecycle) system.
+/** Exported so the requirement PhaseConfig can reuse the exact same approval prompt. */
+export const APPROVAL_SUMMARY_SYSTEM_PROMPT = `You are an Enterprise Requirements Analyst for the AIDLC (AI Delivery Lifecycle) system.
 
 The question-and-answer phase is COMPLETE. Your task now is to present your complete,
 final understanding of the project to a human reviewer for sign-off.
@@ -47,7 +48,7 @@ Rules for the output:
 - If there are no assumptions or no open items, return an empty array — do not pad`;
 
 export function buildApprovalSummaryPrompt(context: ApprovalPromptContext): string {
-  const parts = [BASE, context.secondBrainContext];
+  const parts = [APPROVAL_SUMMARY_SYSTEM_PROMPT, context.secondBrainContext];
 
   parts.push(`--- PROJECT DOCUMENTS ---\n${context.parsedDocuments || 'No document text available.'}`);
 

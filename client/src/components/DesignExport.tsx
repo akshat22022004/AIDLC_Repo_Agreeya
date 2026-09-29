@@ -6,12 +6,11 @@ import * as api from '../services/api';
 interface Props {
   projectId: string;
   designId: string;
-  sessionId: string;
   onFinalized: () => void;
   onGenerateTestCases?: () => void;
 }
 
-export default function DesignExport({ projectId, designId, sessionId, onFinalized, onGenerateTestCases }: Props) {
+export default function DesignExport({ projectId, designId, onFinalized, onGenerateTestCases }: Props) {
   const [finalizing, setFinalizing] = useState(false);
   const [finalized, setFinalized] = useState<{ savedPath: string; designId: string; markdown?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +94,6 @@ export default function DesignExport({ projectId, designId, sessionId, onFinaliz
 
         {showCommitDialog && gitConfig && finalized.markdown && (
           <CommitDialog
-            sessionId={sessionId}
             config={gitConfig}
             filePath={`${gitConfig.basePath || 'aidlc'}/design/${finalized.designId}.md`}
             content={finalized.markdown}

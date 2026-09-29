@@ -1,17 +1,27 @@
 import { useState, useEffect } from 'react';
-import type { GitRepoConfig, CommitResult, PullRequest } from '../types';
+import type { GitRepoConfig, CommitResult, PullRequest, DiagramStatus } from '../types';
 import CommitDialog from './CommitDialog';
 import * as api from '../services/api';
 
 interface Props {
   projectId: string;
   archId: string;
-  sessionId: string;
   onFinalized: () => void;
   onGenerateDesign?: () => void;
+  /** Where the architecture diagram stands — drives the pre-finalize nudge. */
+  diagramStatus?: DiagramStatus;
+  /** Take the user to the diagram step. Omitted when there is nowhere to go. */
+  onOpenDiagram?: () => void;
 }
 
-export default function ArchitectureExport({ projectId, archId, sessionId, onFinalized, onGenerateDesign }: Props) {
+export default function ArchitectureExport({
+  projectId,
+  archId,
+  onFinalized,
+  onGenerateDesign,
+  diagramStatus = 'none',
+  onOpenDiagram,
+}: Props) {
   const [finalizing, setFinalizing] = useState(false);
   const [finalized, setFinalized] = useState<{ savedPath: string; architectureId: string; markdown?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +129,6 @@ export default function ArchitectureExport({ projectId, archId, sessionId, onFin
 
         {showCommitDialog && gitConfig && finalized.markdown && (
           <CommitDialog
-            sessionId={sessionId}
             config={gitConfig}
             filePath={`${gitConfig.basePath || 'aidlc'}/architecture/${finalized.architectureId}.md`}
             content={finalized.markdown}
@@ -146,6 +155,32 @@ export default function ArchitectureExport({ projectId, archId, sessionId, onFin
             Download as Markdown (.md)
           </a>
         </div>
+
+        {onOpenDiagram && diagramStatus !== 'approved' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start justify-between gap-4 flex-wrap">
+            <div className="text-sm text-amber-800">
+              <strong>Recommended:</strong>{' '}
+              {diagramStatus === 'skipped'
+                ? 'You chose to finalize without a system architecture diagram.'
+                : 'No system architecture diagram has been approved yet.'}
+              <p className="text-xs text-amber-700 mt-0.5">
+                An approved diagram is embedded as Section 14 of the finalized document.
+              </p>
+            </div>
+            <button
+              onClick={onOpenDiagram}
+              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors"
+            >
+              {diagramStatus === 'none' ? 'Generate Diagram' : 'Review Diagram'}
+            </button>
+          </div>
+        )}
+
+        {diagramStatus === 'approved' && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-sm text-emerald-700">
+            Architecture diagram approved — it will be included as Section 14.
+          </div>
+        )}
 
         <div className="border-t border-slate-200 pt-4">
           <p className="text-sm text-slate-600 mb-3">

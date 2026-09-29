@@ -91,7 +91,7 @@ export class AzureReposAdapter implements GitProviderAdapter {
         return {
           changeType: existing !== null ? 'edit' : 'add',
           item: { path: f.path.startsWith('/') ? f.path : `/${f.path}` },
-          newContent: { content: f.content, contentType: 'rawtext' },
+          newContent: { content: f.content, contentType: f.encoding === 'base64' ? 'base64encoded' : 'rawtext' },
         };
       }),
     );

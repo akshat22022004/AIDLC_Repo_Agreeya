@@ -8,6 +8,7 @@ import {
   normalizeQuestion,
   readBrain,
 } from './secondBrain.js';
+import { parseLlmJson } from './sessionContext.js';
 
 const MAX_CHARS_PER_CHUNK = 100_000;
 
@@ -123,16 +124,7 @@ export async function analyzeDocuments(
           .join('\n\n');
 
   const rawResponse = await llm.analyze(prompt, content);
-  const jsonStr = extractJson(rawResponse);
-
-  let parsed: any;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
-    throw new Error(
-      `Failed to parse LLM response as JSON. Raw response starts with: ${rawResponse.slice(0, 200)}`
-    );
-  }
+  const parsed = parseLlmJson<any>(rawResponse, 'document analysis');
 
   const understanding = {
     projectOverview: parsed.understanding?.projectOverview || 'NOT FOUND in documents',

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type { RequirementDoc, RequirementSection, SectionVersion } from '../types/index.js';
 import { SECTION_TEMPLATES } from '../prompts/sections/templates.js';
+import { ownedFiles, projectOutputDirName } from './artifactFiles.js';
 
 const REQUIREMENTS_DIR = path.resolve('requirements');
 const PROJECTS_DIR = path.resolve('projects');
@@ -16,8 +17,7 @@ function reqFilePath(sessionId: string, reqId: string): string {
 
 function generateReqId(sessionId: string): string {
   ensureDir(REQUIREMENTS_DIR);
-  const existing = fs.readdirSync(REQUIREMENTS_DIR)
-    .filter((f) => f.startsWith(sessionId) && f.endsWith('.json'));
+  const existing = ownedFiles(REQUIREMENTS_DIR, sessionId);
 
   let maxNum = 0;
   for (const f of existing) {
@@ -75,10 +75,7 @@ export function saveRequirement(doc: RequirementDoc): void {
 
 export function getLatestRequirement(sessionId: string): RequirementDoc | null {
   ensureDir(REQUIREMENTS_DIR);
-  const files = fs.readdirSync(REQUIREMENTS_DIR)
-    .filter((f) => f.startsWith(sessionId) && f.endsWith('.json'))
-    .sort()
-    .reverse();
+  const files = ownedFiles(REQUIREMENTS_DIR, sessionId).reverse();
 
   if (files.length === 0) return null;
   return JSON.parse(fs.readFileSync(path.join(REQUIREMENTS_DIR, files[0]), 'utf-8'));
@@ -86,9 +83,7 @@ export function getLatestRequirement(sessionId: string): RequirementDoc | null {
 
 export function getRequirementsForProject(sessionId: string): RequirementDoc[] {
   ensureDir(REQUIREMENTS_DIR);
-  const files = fs.readdirSync(REQUIREMENTS_DIR)
-    .filter((f) => f.startsWith(sessionId) && f.endsWith('.json'))
-    .sort();
+  const files = ownedFiles(REQUIREMENTS_DIR, sessionId);
 
   return files.map((f) => {
     try {
@@ -189,8 +184,7 @@ export function finalizeRequirement(doc: RequirementDoc, assembledMarkdown: stri
   doc.status = 'finalized';
   saveRequirement(doc);
 
-  const safeProjectName = doc.projectName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
-  const projectDir = path.join(PROJECTS_DIR, safeProjectName, 'requirements');
+  const projectDir = path.join(PROJECTS_DIR, projectOutputDirName(doc.projectName, doc.sessionId), 'requirements');
   ensureDir(projectDir);
 
   const filePath = path.join(projectDir, `${doc.id}.md`);

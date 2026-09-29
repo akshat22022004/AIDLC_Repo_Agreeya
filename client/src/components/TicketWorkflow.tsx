@@ -5,13 +5,16 @@ import HierarchyPreview from './HierarchyPreview';
 import TicketCreationSummary from './TicketCreationSummary';
 
 interface Props {
+  /** The project's session — the hierarchy is generated from its Second Brain. */
   sessionId: string;
+  /** Workspace session holding the ticket provider connection. */
+  workspaceSessionId: string;
   analysis: AnalysisResult;
 }
 
 type WorkflowStep = 'setup' | 'generating' | 'preview' | 'creating' | 'done';
 
-export default function TicketWorkflow({ sessionId, analysis }: Props) {
+export default function TicketWorkflow({ sessionId, workspaceSessionId, analysis }: Props) {
   const [step, setStep] = useState<WorkflowStep>('setup');
   const [provider, setProvider] = useState<string>('');
   const [projects, setProjects] = useState<TicketProject[]>([]);
@@ -26,27 +29,27 @@ export default function TicketWorkflow({ sessionId, analysis }: Props) {
   useEffect(() => {
     async function checkConnections() {
       try {
-        const connections = await api.getConnections(sessionId);
+        const connections = await api.getConnections(workspaceSessionId);
         const connected = connections.filter((c) => c.connected).map((c) => c.provider!);
         setConnectedProviders(connected);
         if (connected.length === 1) setProvider(connected[0]);
       } catch {}
     }
     checkConnections();
-  }, [sessionId]);
+  }, [workspaceSessionId]);
 
   useEffect(() => {
     if (!provider) { setProjects([]); setProjectId(''); return; }
     async function loadProjects() {
       try {
-        const projs = await api.getProjects(sessionId, provider);
+        const projs = await api.getProjects(workspaceSessionId, provider);
         setProjects(projs);
       } catch (err: any) {
         setError(err.message);
       }
     }
     loadProjects();
-  }, [sessionId, provider]);
+  }, [workspaceSessionId, provider]);
 
   const handleGenerate = useCallback(async () => {
     if (!projectId || !provider) return;
@@ -69,7 +72,7 @@ export default function TicketWorkflow({ sessionId, analysis }: Props) {
       collectTitles(result.hierarchy);
 
       try {
-        const dupResult = await api.checkDuplicates(sessionId, provider, projectId, titles);
+        const dupResult = await api.checkDuplicates(workspaceSessionId, provider, projectId, titles);
         if (dupResult.duplicates && dupResult.duplicates.length > 0) {
           const highSimilarity = dupResult.duplicates.filter((d: any) => d.similarity > 80);
           const medSimilarity = dupResult.duplicates.filter((d: any) => d.similarity >= 50 && d.similarity <= 80);
@@ -89,20 +92,20 @@ export default function TicketWorkflow({ sessionId, analysis }: Props) {
       setError(err.message);
       setStep('setup');
     }
-  }, [sessionId, provider, projectId]);
+  }, [sessionId, workspaceSessionId, provider, projectId]);
 
   const handleConfirmCreate = useCallback(async (finalHierarchy: TicketHierarchyNode[]) => {
     setStep('creating');
     setError(null);
     try {
-      const result = await api.createTickets(sessionId, provider, finalHierarchy);
+      const result = await api.createTickets(workspaceSessionId, provider, finalHierarchy);
       setSummary(result);
       setStep('done');
     } catch (err: any) {
       setError(err.message);
       setStep('preview');
     }
-  }, [sessionId, provider]);
+  }, [workspaceSessionId, provider]);
 
   if (connectedProviders.length === 0) {
     return (

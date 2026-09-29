@@ -36,10 +36,64 @@ export function extractJson(raw: string): string {
   return raw;
 }
 
+/**
+ * Close off a JSON object the model stopped emitting mid-way — the usual shape of a
+ * response that hit the output token ceiling. Walks the text to find the bracket and
+ * string state, then backtracks to the last structurally safe boundary and seals it,
+ * so a long answer yields a short-but-valid object instead of an outright failure.
+ */
+export function repairTruncatedJson(text: string): string | null {
+  let inString = false;
+  let escaped = false;
+  const closers: string[] = [];
+
+  for (const ch of text) {
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\') { if (inString) escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') closers.push('}');
+    else if (ch === '[') closers.push(']');
+    else if (ch === '}' || ch === ']') closers.pop();
+  }
+
+  if (!inString && closers.length === 0) return null; // Not truncated — a real syntax error.
+
+  // Cut back to the last completed value, then seal every still-open container.
+  let body = inString ? text.slice(0, text.lastIndexOf('"')) : text;
+  for (let attempt = 0; attempt < 200 && body.length > 0; attempt++) {
+    const trimmed = body.replace(/[\s,]*$/, '');
+    const candidate = trimmed + closers.slice().reverse().join('');
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Drop the trailing partial element and try the next boundary back.
+      const cut = Math.max(
+        trimmed.lastIndexOf(','),
+        trimmed.lastIndexOf('}'),
+        trimmed.lastIndexOf(']')
+      );
+      if (cut <= 0) break;
+      body = trimmed.slice(0, cut);
+      // A closed container we just stepped past no longer needs a closer.
+      const stepped = trimmed[cut];
+      if (stepped === '}' || stepped === ']') body = trimmed.slice(0, cut + 1);
+    }
+  }
+  return null;
+}
+
 export function parseLlmJson<T>(raw: string, label: string): T {
+  const candidate = extractJson(raw);
   try {
-    return JSON.parse(extractJson(raw)) as T;
+    return JSON.parse(candidate) as T;
   } catch {
+    const repaired = repairTruncatedJson(candidate);
+    if (repaired) {
+      console.warn(`[llm] ${label} response was truncated — recovered by sealing the JSON`);
+      return JSON.parse(repaired) as T;
+    }
     throw new Error(
       `Failed to parse ${label} as JSON. Raw response starts with: ${raw.slice(0, 200)}`
     );

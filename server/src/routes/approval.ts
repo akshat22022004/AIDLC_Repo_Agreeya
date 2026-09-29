@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { sessions, getLLM } from '../state.js';
+import { getLLM, loadSession, saveSession } from '../state.js';
 import * as brain from '../services/secondBrain.js';
 import { MAX_QUESTION_CYCLES } from '../services/secondBrain.js';
 import { generateUnderstandingSummary } from '../services/approvalService.js';
@@ -48,7 +48,7 @@ router.post('/:sessionId/approval', async (req, res) => {
     const { sessionId } = req.params;
     const { force } = req.body ?? {};
 
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (!session) {
       res.status(404).json({ success: false, error: 'Session not found' });
       return;
@@ -90,6 +90,7 @@ router.post('/:sessionId/approval', async (req, res) => {
     console.log(`[approval] session=${sessionId} generating understanding summary (${llm.name})`);
     await generateUnderstandingSummary(llm, session);
     session.currentStep = 'approval';
+    saveSession(session);
 
     res.json({ success: true, data: statusPayload(sessionId) });
   } catch (err: any) {
@@ -109,7 +110,7 @@ router.post('/:sessionId/approval/add-info', async (req, res) => {
       return;
     }
 
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (!session) {
       res.status(404).json({ success: false, error: 'Session not found' });
       return;
@@ -132,6 +133,7 @@ router.post('/:sessionId/approval/add-info', async (req, res) => {
 
     await generateUnderstandingSummary(llm, session, text.trim());
     session.currentStep = 'approval';
+    saveSession(session);
 
     res.json({ success: true, data: statusPayload(sessionId) });
   } catch (err: any) {
@@ -165,11 +167,12 @@ router.post('/:sessionId/approval/approve', (req, res) => {
 
     brain.approve(sessionId);
 
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (session) {
       session.approvalStatus = 'approved';
       session.approvedAt = new Date().toISOString();
       session.currentStep = 'approved';
+      saveSession(session);
     }
 
     console.log(`[approval] session=${sessionId} APPROVED by human`);

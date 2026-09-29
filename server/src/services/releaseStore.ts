@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { RELEASE_SECTION_TEMPLATES } from '../prompts/releaseSections/templates.js';
+import { ownedFiles, projectOutputDirName } from './artifactFiles.js';
 
 export interface ReleaseSectionVersion {
   version: number;
@@ -61,8 +62,7 @@ function releaseFilePath(projectId: string, releaseId: string): string {
 
 function generateReleaseId(projectId: string): string {
   ensureDir(RELEASE_DIR);
-  const existing = fs.readdirSync(RELEASE_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'));
+  const existing = ownedFiles(RELEASE_DIR, projectId);
 
   let maxNum = 0;
   for (const f of existing) {
@@ -125,9 +125,7 @@ export function saveRelease(doc: ReleaseDoc): void {
 
 export function getReleasesForProject(projectId: string): ReleaseDoc[] {
   ensureDir(RELEASE_DIR);
-  const files = fs.readdirSync(RELEASE_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'))
-    .sort();
+  const files = ownedFiles(RELEASE_DIR, projectId);
 
   return files.map((f) => {
     try {
@@ -269,8 +267,7 @@ export function finalizeRelease(doc: ReleaseDoc): { markdown: string; savedPath:
   doc.updatedAt = new Date().toISOString();
   saveRelease(doc);
 
-  const safeProjectName = doc.projectName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
-  const projectDir = path.join(path.resolve('projects'), safeProjectName, 'release');
+  const projectDir = path.join(path.resolve('projects'), projectOutputDirName(doc.projectName, doc.projectId), 'release');
   ensureDir(projectDir);
 
   const filePath = path.join(projectDir, `${doc.id}.md`);

@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Project, RequirementDoc, ArchitectureSummary, DesignSummary, TestSummary, ReleaseSummary } from '../types';
+import type { Project, RequirementDoc, ArchitectureSummary, DesignSummary, TestSummary, ReleaseSummary, UploadedFile } from '../types';
 import type { GitCommit } from '../services/api';
 import EmptyState from '../components/EmptyState';
+import ExcelDownload from '../components/ExcelDownload';
+import FileUpload from '../components/FileUpload';
+import DocumentList from '../components/DocumentList';
 import * as api from '../services/api';
 
 interface Props {
@@ -16,7 +19,7 @@ interface Props {
   onOpenRelease: (requirementId: string, architectureId: string, designId: string, testId: string, releaseId?: string) => void;
 }
 
-type Tab = 'requirements' | 'tickets' | 'git' | 'artifacts';
+type Tab = 'requirements' | 'documents' | 'backlog' | 'tickets' | 'git' | 'artifacts';
 
 export default function ProjectDetail({ project, sessionId, onBack, onOpenRequirement, onNewRequirement, onOpenArchitecture, onOpenDesign, onOpenTest, onOpenRelease }: Props) {
   const [tab, setTab] = useState<Tab>('requirements');
@@ -33,16 +36,22 @@ export default function ProjectDetail({ project, sessionId, onBack, onOpenRequir
   const [tests, setTests] = useState<TestSummary[]>([]);
   const [releases, setReleases] = useState<ReleaseSummary[]>([]);
   const [artifactsLoaded, setArtifactsLoaded] = useState(false);
+  // The Epic & Stories backlog may only be built from an approved understanding.
+  const [approved, setApproved] = useState(false);
+  const [brainExists, setBrainExists] = useState(false);
+  const [documents, setDocuments] = useState<UploadedFile[]>([]);
+  const [reopened, setReopened] = useState(false);
 
   const loadRequirements = useCallback(async () => {
     setLoadingReqs(true);
     try {
-      const reqSession = project.sessionId || sessionId;
-      const docs = await api.getProjectRequirements(reqSession);
+      // `sessionId` is this project's own session — never fall back to another id,
+      // which would list a different project's requirements here.
+      const docs = await api.getProjectRequirements(sessionId);
       setRequirements(docs);
     } catch {
       try {
-        const doc = await api.getLatestRequirement(project.sessionId || sessionId);
+        const doc = await api.getLatestRequirement(sessionId);
         setRequirements(doc ? [doc] : []);
       } catch {
         setRequirements([]);
@@ -50,7 +59,7 @@ export default function ProjectDetail({ project, sessionId, onBack, onOpenRequir
     } finally {
       setLoadingReqs(false);
     }
-  }, [project.sessionId, sessionId]);
+  }, [sessionId]);
 
   const loadGitHistory = useCallback(async () => {
     if (gitLoaded) return;
@@ -94,6 +103,32 @@ export default function ProjectDetail({ project, sessionId, onBack, onOpenRequir
   useEffect(() => { loadRequirements(); }, [loadRequirements]);
 
   useEffect(() => {
+    let cancelled = false;
+    api.getAnalysisStatus(sessionId)
+      .then((status) => {
+        if (cancelled) return;
+        setBrainExists(status.exists);
+        setApproved(status.approvalStatus === 'approved');
+      })
+      .catch(() => {});
+    api.getFiles(sessionId)
+      .then((files) => { if (!cancelled) setDocuments(files); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const handleDocumentsUploaded = useCallback((uploaded: UploadedFile[]) => {
+    setDocuments((prev) => [...prev, ...uploaded]);
+    // Adding a document to an approved project reopens the loop server-side: the
+    // agent gets its question cycles back and sign-off returns to pending.
+    if (approved) {
+      setApproved(false);
+      setReopened(true);
+    }
+    setBrainExists(true);
+  }, [approved]);
+
+  useEffect(() => {
     if (tab === 'git' && project.gitProvider && !gitLoaded) {
       loadGitHistory();
     }
@@ -107,6 +142,8 @@ export default function ProjectDetail({ project, sessionId, onBack, onOpenRequir
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: 'requirements', label: 'Requirements', count: requirements.length },
+    { key: 'documents', label: 'Documents', count: documents.length },
+    { key: 'backlog', label: 'Epic & Stories' },
     { key: 'tickets', label: 'Tickets' },
     { key: 'git', label: 'Git History' },
     { key: 'artifacts', label: 'Artifacts', count: (architectures.length + designs.length + tests.length + releases.length) || undefined },
@@ -260,6 +297,89 @@ export default function ProjectDetail({ project, sessionId, onBack, onOpenRequir
                     );
                   })}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Documents / Context Tab */}
+          {tab === 'documents' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700">Project Documents</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Everything this project knows is built from these. Add a new document
+                  whenever one arrives from the client — the agent keeps what it already
+                  learned and reads the new material on top of it.
+                </p>
+              </div>
+
+              {reopened && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                  <p className="text-sm font-medium text-amber-800">New document added</p>
+                  <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                    This project was already approved, so the agent's question cycles have
+                    been returned and sign-off is back to pending. Continue the intake to
+                    re-analyse with the new document, answer any follow-up questions, and
+                    approve the combined understanding — then the Epic &amp; Stories Excel
+                    can be regenerated.
+                  </p>
+                  <button
+                    onClick={onNewRequirement}
+                    className="mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Continue intake
+                  </button>
+                </div>
+              )}
+
+              <FileUpload sessionId={sessionId} onFilesUploaded={handleDocumentsUploaded} />
+
+              {documents.length > 0 ? (
+                <DocumentList files={documents} />
+              ) : (
+                <p className="text-xs text-slate-400 text-center py-4">
+                  No documents in this project yet.
+                </p>
+              )}
+
+              {documents.length > 0 && !reopened && (
+                <div className="border-t border-slate-200 pt-4 flex items-center justify-between gap-4">
+                  <p className="text-xs text-slate-500">
+                    {approved
+                      ? 'Understanding approved. Adding another document will reopen it for review.'
+                      : 'Continue the intake to analyse these documents, answer the agent\'s questions, and approve.'}
+                  </p>
+                  <button
+                    onClick={onNewRequirement}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
+                  >
+                    Open intake
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Epic & Stories Backlog Tab */}
+          {tab === 'backlog' && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700">Epic &amp; User Stories</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  The delivery backlog for this project, built from its second brain and
+                  exported as an Excel workbook.
+                </p>
+              </div>
+
+              {!brainExists ? (
+                <EmptyState
+                  title="No project context yet"
+                  description="Upload the client documents and complete the intake for this project first — the backlog is generated from its approved understanding."
+                  actionLabel="Start intake"
+                  onAction={onNewRequirement}
+                />
+              ) : (
+                <ExcelDownload sessionId={sessionId} approved={approved} />
               )}
             </div>
           )}

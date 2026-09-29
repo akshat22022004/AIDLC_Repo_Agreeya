@@ -7,12 +7,11 @@ import EmptyState from '../components/EmptyState';
 import * as api from '../services/api';
 
 interface Props {
-  sessionId: string;
   onOpenProject: (project: Project) => void;
   onNewRequirement: (project: Project) => void;
 }
 
-export default function Dashboard({ sessionId, onOpenProject, onNewRequirement }: Props) {
+export default function Dashboard({ onOpenProject, onNewRequirement }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,6 +19,9 @@ export default function Dashboard({ sessionId, onOpenProject, onNewRequirement }
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'lastActivity' | 'name' | 'requirementCount'>('lastActivity');
+  const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -43,6 +45,24 @@ export default function Dashboard({ sessionId, onOpenProject, onNewRequirement }
       setStats({ ...stats, totalProjects: stats.totalProjects + 1 });
     }
   };
+
+  const handleDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeletingId(pendingDelete.id);
+    setDeleteError(null);
+    try {
+      await api.deleteProject(pendingDelete.id);
+      setProjects((prev) => prev.filter((p) => p.id !== pendingDelete.id));
+      setPendingDelete(null);
+      // Requirement and approval totals change with the project, so refetch rather
+      // than guessing at the new numbers.
+      api.getProjectStats().then(setStats).catch(() => {});
+    } catch (err: any) {
+      setDeleteError(err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [pendingDelete]);
 
   const filtered = projects
     .filter((p) => {
@@ -130,6 +150,8 @@ export default function Dashboard({ sessionId, onOpenProject, onNewRequirement }
               project={project}
               onOpen={() => onOpenProject(project)}
               onNewRequirement={() => onNewRequirement(project)}
+              onDelete={() => { setDeleteError(null); setPendingDelete(project); }}
+              deleting={deletingId === project.id}
             />
           ))}
         </div>
@@ -137,10 +159,50 @@ export default function Dashboard({ sessionId, onOpenProject, onNewRequirement }
 
       {showForm && (
         <ProjectForm
-          sessionId={sessionId}
           onCreated={handleProjectCreated}
           onCancel={() => setShowForm(false)}
         />
+      )}
+
+      {pendingDelete && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-800">Delete project</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600">
+                Delete <strong className="text-slate-900">{pendingDelete.name}</strong> and everything
+                in it? Its documents, project understanding, requirements, architecture, design, test
+                and release artifacts are removed permanently.
+              </p>
+              <p className="text-xs text-slate-400">This cannot be undone.</p>
+
+              {deleteError && (
+                <div className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{deleteError}</div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(null)}
+                  disabled={deletingId !== null}
+                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deletingId !== null}
+                  className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {deletingId ? 'Deleting...' : 'Delete project'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

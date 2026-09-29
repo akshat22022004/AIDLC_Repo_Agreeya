@@ -209,3 +209,82 @@ export function buildEpicStoriesWorkbook(
 
   return { filePath, fileName, totalStoryPoints };
 }
+
+// ── Generic workbook writer (used by the phase engine's Excel deliverables) ──
+
+export interface WorkbookSheet {
+  name: string;
+  headers: string[];
+  rows: (string | number)[][];
+  /** Columns rendered centred rather than left-aligned. */
+  centerColumns?: number[];
+  /** Column whose value drives the priority colour coding, if any. */
+  priorityColumn?: number;
+}
+
+/**
+ * Write any set of tabular sheets with the same house style the backlog workbook
+ * uses: navy header row, banded rows, auto-fitted columns, autofilter, wrapped
+ * cells sized to their content.
+ *
+ * A phase declares an Excel deliverable; this turns whatever rows that deliverable
+ * produced into the file. Sheet names are truncated to Excel's 31-character limit.
+ */
+export function buildStyledWorkbook(
+  sheets: WorkbookSheet[],
+  targetDir: string,
+  fileName: string
+): { filePath: string; fileName: string } {
+  const workbook = XLSX.utils.book_new();
+
+  for (const sheet of sheets) {
+    const centered = new Set(sheet.centerColumns ?? []);
+    const cells: any[][] = [sheet.headers.map((h) => cell(h, headerStyle()))];
+
+    sheet.rows.forEach((row, index) => {
+      const band = index % 2 === 0 ? undefined : LIGHT_GRAY;
+      cells.push(
+        row.map((value, col) => {
+          if (sheet.priorityColumn !== undefined && col === sheet.priorityColumn) {
+            const fill = PRIORITY_FILL[String(value)] ?? band;
+            return cell(value, bodyStyle(fill, { bold: true, center: true }));
+          }
+          return cell(value, bodyStyle(band, { bold: col === 0, center: centered.has(col) }));
+        })
+      );
+    });
+
+    // Row height follows the tallest wrapped cell in the row.
+    const heights = [
+      24,
+      ...sheet.rows.map((row) => {
+        const lines = row.reduce<number>(
+          (max, value) => Math.max(max, String(value ?? '').split('\n').length),
+          1
+        );
+        return Math.max(40, Math.min(200, lines * 24));
+      }),
+    ];
+
+    const built = sheetFromCells(cells, [sheet.headers, ...sheet.rows], heights);
+    if (sheet.rows.length > 0) {
+      built['!autofilter'] = {
+        ref: XLSX.utils.encode_range({
+          s: { r: 0, c: 0 },
+          e: { r: sheet.rows.length, c: sheet.headers.length - 1 },
+        }),
+      };
+    }
+    XLSX.utils.book_append_sheet(workbook, built, sheet.name.slice(0, 31));
+  }
+
+  ensureDir(targetDir);
+  const filePath = path.join(targetDir, fileName);
+  fs.writeFileSync(filePath, XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  return { filePath, fileName };
+}
+
+/** Render a list as a numbered block for a wrapped Excel cell. */
+export function excelList(items: string[] | undefined): string {
+  return bulletList(items ?? []);
+}

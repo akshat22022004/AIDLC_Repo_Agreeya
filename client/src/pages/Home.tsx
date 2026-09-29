@@ -10,9 +10,16 @@ import ChatInterface from '../components/ChatInterface';
 import TicketBrowser from '../components/TicketBrowser';
 import TicketWorkflow from '../components/TicketWorkflow';
 import * as api from '../services/api';
+import * as phaseApi from '../services/phaseApi';
 
 interface HomeProps {
+  /** The project's own session — owns its Second Brain, documents and Q&A. */
+  sessionId: string;
+  /** Browser-wide session that holds the provider connections. */
+  workspaceSessionId: string;
   onNavigateToRequirements: () => void;
+  /** Hand the project to the next phase. Only ever called from an explicit click. */
+  onProceedToPhase?: (nextPhaseId: string) => void;
   onBack?: () => void;
   projectName?: string;
 }
@@ -31,17 +38,14 @@ const STEPS: { key: Step; label: string; num: number }[] = [
 
 const MAX_CYCLES = 2;
 
-function getSessionId(): string {
-  let id = sessionStorage.getItem('aidlc-session');
-  if (!id) {
-    id = crypto.randomUUID();
-    sessionStorage.setItem('aidlc-session', id);
-  }
-  return id;
-}
-
-export default function Home({ onNavigateToRequirements, onBack, projectName }: HomeProps) {
-  const [sessionId] = useState(getSessionId);
+export default function Home({
+  sessionId,
+  workspaceSessionId,
+  onNavigateToRequirements,
+  onProceedToPhase,
+  onBack,
+  projectName,
+}: HomeProps) {
   const [step, setStep] = useState<Step>('upload');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -56,21 +60,37 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
   const [questionsExhausted, setQuestionsExhausted] = useState(false);
   const [withheldReason, setWithheldReason] = useState<string | null>(null);
   const [isApproved, setIsApproved] = useState(false);
+  const [proceeding, setProceeding] = useState(false);
 
   useEffect(() => {
     async function checkConnections() {
       try {
-        const connections = await api.getConnections(sessionId);
+        const connections = await api.getConnections(workspaceSessionId);
         const connected = connections.find((c) => c.connected);
         if (connected) setConnectedProvider(connected.provider!);
       } catch {}
     }
     checkConnections();
-  }, [sessionId]);
+  }, [workspaceSessionId]);
 
-  // Re-hydrate the cycle/approval state from the project second brain on mount.
+  // Re-hydrate the project from disk on mount: the documents it already holds, the
+  // last analysis, and the cycle/approval state from its second brain. Without this,
+  // reopening a project would present an empty intake and lose its context.
   useEffect(() => {
-    async function loadBrainStatus() {
+    async function loadProjectState() {
+      try {
+        const existingFiles = await api.getFiles(sessionId);
+        if (existingFiles.length > 0) setFiles(existingFiles);
+      } catch {}
+
+      try {
+        const previous = await api.getAnalysis(sessionId);
+        setAnalysis(previous);
+        setAnalysisRound(1);
+      } catch {
+        // No analysis run yet for this project — stay on the upload step.
+      }
+
       try {
         const status = await api.getAnalysisStatus(sessionId);
         if (!status.exists) return;
@@ -82,7 +102,7 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
         }
       } catch {}
     }
-    loadBrainStatus();
+    loadProjectState();
   }, [sessionId]);
 
   const handleFilesUploaded = useCallback(
@@ -138,10 +158,29 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
     setStep('approved');
   }, []);
 
+  /**
+   * Hand this project to the architecture agent. The server copies the approved
+   * requirement, its Second Brain and its backlog into the next phase's own brain;
+   * nothing happens until the user clicks.
+   */
+  const handleProceedToNextPhase = useCallback(async () => {
+    setProceeding(true);
+    setError(null);
+    try {
+      const result = await phaseApi.proceedToNextPhase('requirement', sessionId);
+      onProceedToPhase?.(result.nextPhaseId);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setProceeding(false);
+    }
+  }, [sessionId, onProceedToPhase]);
+
   const handleWorkOnTicket = useCallback(async (ticket: Ticket) => {
     setError(null);
     try {
-      await api.workOnTicket(sessionId, connectedProvider!, ticket.id);
+      // Read the ticket through the workspace connection, file it into this project.
+      await api.workOnTicket(workspaceSessionId, connectedProvider!, ticket.id, sessionId);
       setTicketSource(ticket.key);
       setFiles((prev) => [
         ...prev,
@@ -158,7 +197,7 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
     } catch (err: any) {
       setError(err.message);
     }
-  }, [sessionId, connectedProvider]);
+  }, [sessionId, workspaceSessionId, connectedProvider]);
 
   const readyFiles = files.filter((f) => f.status === 'ready');
   const stepIndex = STEPS.findIndex((s) => s.key === step);
@@ -289,7 +328,7 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
               </div>
               <div className="p-6">
                 <TicketBrowser
-                  sessionId={sessionId}
+                  sessionId={workspaceSessionId}
                   provider={connectedProvider}
                   onWorkOnTicket={handleWorkOnTicket}
                 />
@@ -453,7 +492,11 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
                     </p>
                   </div>
                   <div className="p-6">
-                    <TicketWorkflow sessionId={sessionId} analysis={analysis} />
+                    <TicketWorkflow
+                      sessionId={sessionId}
+                      workspaceSessionId={workspaceSessionId}
+                      analysis={analysis}
+                    />
                   </div>
                 </div>
               </section>
@@ -481,6 +524,38 @@ export default function Home({ onNavigateToRequirements, onBack, projectName }: 
                       className="px-6 py-3 bg-accent hover:bg-accent-hover disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-colors"
                     >
                       {isApproved ? 'Open Requirements Builder' : '🔒 Approve your understanding first'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Step 8: Hand off to the next phase — unlocked by approval */}
+            {onProceedToPhase && analysis && !isAnalyzing && (step === 'approval' || step === 'approved') && (
+              <section className="animate-slide-up">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+                    <h2 className="text-lg font-semibold text-slate-800">8. Proceed to Architecture</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      Hand this project to the Solution Architect agent
+                    </p>
+                  </div>
+                  <div className="p-6 text-center">
+                    <p className="text-sm text-slate-600 mb-4">
+                      The architecture agent receives your approved requirement document, this
+                      project's second brain, every confirmed fact and the generated user stories.
+                      It then asks technical questions only — nothing you have already answered.
+                    </p>
+                    <button
+                      onClick={handleProceedToNextPhase}
+                      disabled={!isApproved || proceeding}
+                      className="px-6 py-3 bg-accent hover:bg-accent-hover disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-lg font-medium text-sm transition-colors"
+                    >
+                      {proceeding
+                        ? 'Preparing architecture phase...'
+                        : isApproved
+                        ? 'Proceed to Architecture →'
+                        : '🔒 Approve your understanding first'}
                     </button>
                   </div>
                 </div>

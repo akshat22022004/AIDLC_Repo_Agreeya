@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { sessions } from '../state.js';
+import { loadSession, saveSession } from '../state.js';
 import * as brain from '../services/secondBrain.js';
 import { MAX_QUESTION_CYCLES } from '../services/secondBrain.js';
 import type { ClarifyingQuestion, QnaRecord, Session } from '../types/index.js';
@@ -66,7 +66,7 @@ function answerState(session: Session) {
 }
 
 router.get('/:sessionId', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;
@@ -76,7 +76,7 @@ router.get('/:sessionId', (req, res) => {
 });
 
 router.post('/:sessionId/answer', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;
@@ -98,6 +98,7 @@ router.post('/:sessionId/answer', (req, res) => {
   question.answer = answer;
   question.status = 'answered';
   session.currentStep = 'questions';
+  saveSession(session);
 
   brain.recordAnswers(session.id, [
     toRecord(question, cycleForAnalysisIndex(session.analyses.length - 1)),
@@ -107,7 +108,7 @@ router.post('/:sessionId/answer', (req, res) => {
 });
 
 router.post('/:sessionId/answer-bulk', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;
@@ -130,13 +131,15 @@ router.post('/:sessionId/answer-bulk', (req, res) => {
   }
 
   session.currentStep = 'questions';
+
+  saveSession(session);
   syncAnswersToBrain(session);
 
   res.json({ success: true, data: { questions: latest.questions, ...answerState(session) } });
 });
 
 router.post('/:sessionId/skip', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;
@@ -161,7 +164,7 @@ router.post('/:sessionId/skip', (req, res) => {
 });
 
 router.post('/:sessionId/import-answers', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;

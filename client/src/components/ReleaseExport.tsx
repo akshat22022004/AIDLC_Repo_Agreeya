@@ -6,11 +6,10 @@ import * as api from '../services/api';
 interface Props {
   projectId: string;
   releaseId: string;
-  sessionId: string;
   onFinalized: () => void;
 }
 
-export default function ReleaseExport({ projectId, releaseId, sessionId, onFinalized }: Props) {
+export default function ReleaseExport({ projectId, releaseId, onFinalized }: Props) {
   const [finalizing, setFinalizing] = useState(false);
   const [finalized, setFinalized] = useState<{ savedPath: string; releaseId: string; markdown?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +87,6 @@ export default function ReleaseExport({ projectId, releaseId, sessionId, onFinal
 
         {showCommitDialog && gitConfig && finalized.markdown && (
           <CommitDialog
-            sessionId={sessionId}
             config={gitConfig}
             filePath={`${gitConfig.basePath || 'aidlc'}/release/${finalized.releaseId}.md`}
             content={finalized.markdown}

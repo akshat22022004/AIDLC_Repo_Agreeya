@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import type { GitProvider, Repo, Branch, GitRepoConfig } from '../types';
 import * as api from '../services/api';
+import { getWorkspaceSessionId } from '../services/session';
 
 interface Props {
-  sessionId: string;
   projectId: string;
   provider: GitProvider;
   onConfigSaved: (config: GitRepoConfig) => void;
 }
 
-export default function RepoConfig({ sessionId, projectId, provider, onConfigSaved }: Props) {
+export default function RepoConfig({ projectId, provider, onConfigSaved }: Props) {
+  // Repo listings come from the workspace git connection, not the project session.
+  const sessionId = getWorkspaceSessionId();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedRepo, setSelectedRepo] = useState('');

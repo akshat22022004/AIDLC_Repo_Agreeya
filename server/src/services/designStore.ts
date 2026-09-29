@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { DESIGN_SECTION_TEMPLATES } from '../prompts/designSections/templates.js';
+import { ownedFiles, projectOutputDirName } from './artifactFiles.js';
 
 export interface DesignSectionVersion {
   version: number;
@@ -57,8 +58,7 @@ function designFilePath(projectId: string, designId: string): string {
 
 function generateDesignId(projectId: string): string {
   ensureDir(DESIGN_DIR);
-  const existing = fs.readdirSync(DESIGN_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'));
+  const existing = ownedFiles(DESIGN_DIR, projectId);
 
   let maxNum = 0;
   for (const f of existing) {
@@ -117,9 +117,7 @@ export function saveDesign(doc: DesignDoc): void {
 
 export function getDesignsForProject(projectId: string): DesignDoc[] {
   ensureDir(DESIGN_DIR);
-  const files = fs.readdirSync(DESIGN_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'))
-    .sort();
+  const files = ownedFiles(DESIGN_DIR, projectId);
 
   return files.map((f) => {
     try {
@@ -259,8 +257,7 @@ export function finalizeDesign(doc: DesignDoc): { markdown: string; savedPath: s
   doc.updatedAt = new Date().toISOString();
   saveDesign(doc);
 
-  const safeProjectName = doc.projectName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
-  const projectDir = path.join(path.resolve('projects'), safeProjectName, 'design');
+  const projectDir = path.join(path.resolve('projects'), projectOutputDirName(doc.projectName, doc.projectId), 'design');
   ensureDir(projectDir);
 
   const filePath = path.join(projectDir, `${doc.id}.md`);

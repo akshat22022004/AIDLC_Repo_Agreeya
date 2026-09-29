@@ -3,8 +3,8 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { parseFile } from '../services/parser.js';
-import { sessions, getOrCreateSession } from '../state.js';
-import { initSecondBrain } from '../services/secondBrain.js';
+import { getOrCreateSession, loadSession, saveSession } from '../state.js';
+import { initSecondBrain, reopenForNewDocuments, getStatus } from '../services/secondBrain.js';
 import type { UploadedFile } from '../types/index.js';
 
 const UPLOAD_DIR = path.resolve('uploads');
@@ -44,10 +44,22 @@ router.post('/:sessionId', upload.array('files', 20), async (req, res) => {
     }
 
     const session = getOrCreateSession(sessionId);
+    const documentNames = files.map((f) => f.originalname);
 
     // The Second Brain is created with the very first upload and lives for the
     // whole project from here on.
-    initSecondBrain(sessionId, { documents: files.map((f) => f.originalname) });
+    const wasApproved = getStatus(sessionId).approvalStatus === 'approved';
+    if (wasApproved) {
+      // A document arriving after sign-off reopens the loop: the agent keeps
+      // everything it already knows and earns fresh question cycles for the new
+      // material, and the human approves the combined understanding again.
+      reopenForNewDocuments(sessionId, documentNames);
+      console.log(
+        `[upload] session=${sessionId} received ${files.length} document(s) after approval — question cycles reset, approval back to pending`
+      );
+    } else {
+      initSecondBrain(sessionId, { documents: documentNames });
+    }
 
     const uploadedFiles: UploadedFile[] = [];
 
@@ -78,6 +90,10 @@ router.post('/:sessionId', upload.array('files', 20), async (req, res) => {
       uploadedFiles.push(fileRecord);
     }
 
+    // The document list is part of the project's permanent scaffolding — a document
+    // added today must still be there when the project is reopened next month.
+    saveSession(session);
+
     res.json({ success: true, data: uploadedFiles });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -85,7 +101,7 @@ router.post('/:sessionId', upload.array('files', 20), async (req, res) => {
 });
 
 router.get('/:sessionId/files', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = loadSession(req.params.sessionId);
   if (!session) {
     res.json({ success: true, data: [] });
     return;

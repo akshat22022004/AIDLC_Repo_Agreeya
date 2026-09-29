@@ -1,6 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import { ARCH_SECTION_TEMPLATES } from '../prompts/architectureSections/templates.js';
+import { ownedFiles, projectOutputDirName } from './artifactFiles.js';
+import { getProject } from './projectStore.js';
+import { readDiagram, renderDiagramSection } from './diagramStore.js';
+
+/** The phase whose diagram this document carries. */
+export const ARCHITECTURE_PHASE_ID = 'architecture';
 
 export interface ArchSectionVersion {
   version: number;
@@ -55,8 +61,7 @@ function archFilePath(projectId: string, archId: string): string {
 
 function generateArchId(projectId: string): string {
   ensureDir(ARCHITECTURE_DIR);
-  const existing = fs.readdirSync(ARCHITECTURE_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'));
+  const existing = ownedFiles(ARCHITECTURE_DIR, projectId);
 
   let maxNum = 0;
   for (const f of existing) {
@@ -113,9 +118,7 @@ export function saveArchitecture(doc: ArchitectureDoc): void {
 
 export function getArchitecturesForProject(projectId: string): ArchitectureDoc[] {
   ensureDir(ARCHITECTURE_DIR);
-  const files = fs.readdirSync(ARCHITECTURE_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'))
-    .sort();
+  const files = ownedFiles(ARCHITECTURE_DIR, projectId);
 
   return files.map((f) => {
     try {
@@ -247,7 +250,32 @@ export function assembleArchitecture(doc: ArchitectureDoc): string {
     lines.push('');
   }
 
+  // Section 14 — only present when a human has approved a diagram.
+  const sessionId = architectureSessionId(doc);
+  const diagramSection = sessionId
+    ? renderDiagramSection(
+        readDiagram(sessionId, ARCHITECTURE_PHASE_ID),
+        ARCH_SECTION_TEMPLATES.length + 1
+      )
+    : '';
+  if (diagramSection) {
+    lines.push(diagramSection);
+    lines.push('---');
+    lines.push('');
+  }
+
   return lines.join('\n');
+}
+
+/**
+ * The session a legacy architecture document belongs to.
+ *
+ * The document is keyed by project, but the diagram — like every other phase
+ * artifact — lives under the session, so the two screens that build an
+ * architecture share one diagram rather than each keeping its own.
+ */
+export function architectureSessionId(doc: ArchitectureDoc): string | null {
+  return getProject(doc.projectId)?.sessionId ?? null;
 }
 
 export function finalizeArchitecture(doc: ArchitectureDoc): { markdown: string; savedPath: string } {
@@ -256,8 +284,7 @@ export function finalizeArchitecture(doc: ArchitectureDoc): { markdown: string; 
   doc.updatedAt = new Date().toISOString();
   saveArchitecture(doc);
 
-  const safeProjectName = doc.projectName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
-  const projectDir = path.join(path.resolve('projects'), safeProjectName, 'architecture');
+  const projectDir = path.join(path.resolve('projects'), projectOutputDirName(doc.projectName, doc.projectId), 'architecture');
   ensureDir(projectDir);
 
   const filePath = path.join(projectDir, `${doc.id}.md`);

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { TEST_SECTION_TEMPLATES } from '../prompts/testSections/templates.js';
+import { ownedFiles, projectOutputDirName } from './artifactFiles.js';
 
 export interface TestSectionVersion {
   version: number;
@@ -59,8 +60,7 @@ function testFilePath(projectId: string, testId: string): string {
 
 function generateTestId(projectId: string): string {
   ensureDir(TEST_DIR);
-  const existing = fs.readdirSync(TEST_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'));
+  const existing = ownedFiles(TEST_DIR, projectId);
 
   let maxNum = 0;
   for (const f of existing) {
@@ -121,9 +121,7 @@ export function saveTest(doc: TestDoc): void {
 
 export function getTestsForProject(projectId: string): TestDoc[] {
   ensureDir(TEST_DIR);
-  const files = fs.readdirSync(TEST_DIR)
-    .filter((f) => f.startsWith(projectId) && f.endsWith('.json'))
-    .sort();
+  const files = ownedFiles(TEST_DIR, projectId);
 
   return files.map((f) => {
     try {
@@ -264,8 +262,7 @@ export function finalizeTest(doc: TestDoc): { markdown: string; savedPath: strin
   doc.updatedAt = new Date().toISOString();
   saveTest(doc);
 
-  const safeProjectName = doc.projectName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
-  const projectDir = path.join(path.resolve('projects'), safeProjectName, 'tests');
+  const projectDir = path.join(path.resolve('projects'), projectOutputDirName(doc.projectName, doc.projectId), 'tests');
   ensureDir(projectDir);
 
   const filePath = path.join(projectDir, `${doc.id}.md`);

@@ -5,9 +5,11 @@ import {
   createProject,
   updateProject,
   archiveProject,
+  deleteProject,
   computeProjectStats,
   getProjectStats,
 } from '../services/projectStore.js';
+import { sessions, chatHistories } from '../state.js';
 
 const router = Router();
 
@@ -59,11 +61,34 @@ router.put('/:projectId', (req, res) => {
   }
 });
 
-router.delete('/:projectId', (req, res) => {
+/** Hide a project without destroying its work. */
+router.post('/:projectId/archive', (req, res) => {
   try {
     const success = archiveProject(req.params.projectId);
     if (!success) { res.status(404).json({ success: false, error: 'Project not found' }); return; }
     res.json({ success: true, data: null });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * Permanently delete a project and every artifact namespaced under it. The in-memory
+ * session and chat history go too — otherwise a server that has not restarted would
+ * still answer for the deleted project's session id.
+ */
+router.delete('/:projectId', (req, res) => {
+  try {
+    const deleted = deleteProject(req.params.projectId);
+    if (!deleted) { res.status(404).json({ success: false, error: 'Project not found' }); return; }
+
+    if (deleted.sessionId) {
+      sessions.delete(deleted.sessionId);
+      chatHistories.delete(deleted.sessionId);
+    }
+
+    console.log(`[projects] deleted project=${deleted.id} session=${deleted.sessionId} name="${deleted.name}"`);
+    res.json({ success: true, data: { id: deleted.id, name: deleted.name } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

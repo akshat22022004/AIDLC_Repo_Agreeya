@@ -248,7 +248,7 @@ export default function TestBuilder({
       {view === 'export' && (
         <div className="max-w-2xl mx-auto px-6 py-6">
           <TestExport
-            projectId={projectId} testId={doc.id} sessionId={sessionId}
+            projectId={projectId} testId={doc.id}
             onFinalized={() => setDoc((prev) => prev ? { ...prev, status: 'finalized' } : prev)}
             onGenerateReleaseNotes={onGenerateReleaseNotes ? () => onGenerateReleaseNotes(requirementId, architectureId, designId, doc.id) : undefined}
           />

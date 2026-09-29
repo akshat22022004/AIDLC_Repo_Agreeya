@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { GitRepoConfig, CommitResult, PullRequest, GitProvider } from '../types';
 import * as api from '../services/api';
+import { getWorkspaceSessionId } from '../services/session';
 
 interface Props {
-  sessionId: string;
   config: GitRepoConfig;
   filePath: string;
   content: string;
@@ -14,7 +14,6 @@ interface Props {
 }
 
 export default function CommitDialog({
-  sessionId,
   config,
   filePath,
   content,
@@ -23,6 +22,8 @@ export default function CommitDialog({
   onCommitted,
   onCancel,
 }: Props) {
+  // Git credentials belong to the workspace, not to the project being committed.
+  const sessionId = getWorkspaceSessionId();
   const [message, setMessage] = useState(defaultMessage);
   const [createPR, setCreatePR] = useState(config.autoCreatePR);
   const [committing, setCommitting] = useState(false);

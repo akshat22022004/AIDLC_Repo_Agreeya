@@ -13,8 +13,20 @@ import {
   revertArchSection,
   finalizeArchitecture,
   assembleArchitecture,
+  architectureSessionId,
   toSummary,
+  ARCHITECTURE_PHASE_ID,
+  type ArchitectureDoc,
 } from '../services/architectureStore.js';
+import {
+  approveDiagram,
+  readDiagram,
+  saveEditedDiagram,
+  saveGeneratedDiagram,
+  skipDiagram,
+} from '../services/diagramStore.js';
+import { buildDiagramPrompt, extractMermaid, looksLikeMermaid } from '../prompts/diagramPrompt.js';
+import { buildSecondBrainContextBlock } from '../services/secondBrain.js';
 import { getRequirement } from '../services/requirementStore.js';
 import { assembleRequirement } from '../prompts/sections/assembler.js';
 import { getProject } from '../services/projectStore.js';
@@ -193,6 +205,134 @@ router.post('/:projectId/:archId/revert', (req, res) => {
 
     const updated = revertArchSection(doc, sectionNumber, version);
     res.json({ success: true, data: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── System diagram ──
+//
+// The diagram is stored per session under phases/architecture/, the same place
+// the phase-engine screen keeps it, so the two architecture screens never produce
+// two competing diagrams for one project.
+
+type DiagramTarget =
+  | { ok: true; doc: ArchitectureDoc; sessionId: string }
+  | { ok: false; status: number; message: string };
+
+/** Resolve the architecture document and the session its diagram lives under. */
+function diagramTarget(projectId: string, archId: string): DiagramTarget {
+  const doc = getArchitecture(projectId, archId);
+  if (!doc) return { ok: false, status: 404, message: 'Architecture not found' };
+
+  const sessionId = architectureSessionId(doc);
+  if (!sessionId) {
+    return {
+      ok: false,
+      status: 409,
+      message: 'This project has no session, so a diagram cannot be stored for it.',
+    };
+  }
+  return { ok: true, doc, sessionId };
+}
+
+router.post('/:projectId/:archId/generate-diagram', async (req, res) => {
+  try {
+    const { projectId, archId } = req.params;
+    const { feedback } = req.body ?? {};
+
+    const target = diagramTarget(projectId, archId);
+    if (!target.ok) {
+      res.status(target.status).json({ success: false, error: target.message });
+      return;
+    }
+    const { doc, sessionId } = target;
+
+    const approved = doc.sections.filter((s) => s.status === 'approved');
+    if (approved.length === 0) {
+      res.status(409).json({ success: false, error: 'Approve at least one section before generating a diagram' });
+      return;
+    }
+
+    const llm = getLLM();
+    if (!llm) { res.status(500).json({ success: false, error: 'No LLM configured' }); return; }
+
+    const existing = readDiagram(sessionId, ARCHITECTURE_PHASE_ID);
+
+    const prompt = buildDiagramPrompt({
+      documentMarkdown: assembleArchitecture(doc),
+      contextBlock: buildSecondBrainContextBlock(sessionId, ARCHITECTURE_PHASE_ID),
+      projectName: doc.projectName,
+      documentId: doc.id,
+      phaseName: 'Architecture',
+      feedback: typeof feedback === 'string' && feedback.trim() ? feedback.trim() : undefined,
+      previousDiagram: feedback && existing.mermaid ? existing.mermaid : undefined,
+    });
+
+    const mermaid = extractMermaid(await llm.analyze(prompt, ''));
+    if (!mermaid || !looksLikeMermaid(mermaid)) {
+      res.status(502).json({
+        success: false,
+        error: 'The model did not return Mermaid syntax. Try generating again, or write the diagram by hand.',
+      });
+      return;
+    }
+
+    res.json({ success: true, data: saveGeneratedDiagram(sessionId, ARCHITECTURE_PHASE_ID, mermaid) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/:projectId/:archId/diagram', (req, res) => {
+  const target = diagramTarget(req.params.projectId, req.params.archId);
+  if (!target.ok) {
+    res.status(target.status).json({ success: false, error: target.message });
+    return;
+  }
+  res.json({ success: true, data: readDiagram(target.sessionId, ARCHITECTURE_PHASE_ID) });
+});
+
+router.post('/:projectId/:archId/diagram', (req, res) => {
+  try {
+    const { mermaid } = req.body ?? {};
+    if (typeof mermaid !== 'string') {
+      res.status(400).json({ success: false, error: 'mermaid (string) is required' });
+      return;
+    }
+    const target = diagramTarget(req.params.projectId, req.params.archId);
+    if (!target.ok) {
+      res.status(target.status).json({ success: false, error: target.message });
+      return;
+    }
+    res.json({ success: true, data: saveEditedDiagram(target.sessionId, ARCHITECTURE_PHASE_ID, mermaid) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/:projectId/:archId/diagram/approve', (req, res) => {
+  try {
+    const target = diagramTarget(req.params.projectId, req.params.archId);
+    if (!target.ok) {
+      res.status(target.status).json({ success: false, error: target.message });
+      return;
+    }
+    const { mermaid } = req.body ?? {};
+    res.json({ success: true, data: approveDiagram(target.sessionId, ARCHITECTURE_PHASE_ID, mermaid) });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/:projectId/:archId/diagram/skip', (req, res) => {
+  try {
+    const target = diagramTarget(req.params.projectId, req.params.archId);
+    if (!target.ok) {
+      res.status(target.status).json({ success: false, error: target.message });
+      return;
+    }
+    res.json({ success: true, data: skipDiagram(target.sessionId, ARCHITECTURE_PHASE_ID) });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

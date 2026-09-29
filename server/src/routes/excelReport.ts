@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import fs from 'fs';
-import { sessions, getLLM } from '../state.js';
+import { getLLM, getOrCreateSession } from '../state.js';
 import * as brain from '../services/secondBrain.js';
 import { generateEpicAndStories } from '../services/storyGenerator.js';
 import { buildEpicStoriesWorkbook } from '../services/excelBuilder.js';
@@ -69,17 +69,17 @@ router.post('/:sessionId/excel-report', async (req, res) => {
     const { sessionId } = req.params;
     const { regenerate } = req.body ?? {};
 
-    const session = sessions.get(sessionId);
-    if (!session) {
-      res.status(404).json({ success: false, error: 'Session not found' });
-      return;
-    }
-
     const data = brain.readBrain(sessionId);
     if (!data) {
       res.status(404).json({ success: false, error: 'No second brain exists for this session' });
       return;
     }
+
+    // The Second Brain is the real input here — it already carries the understanding,
+    // the Q&A chain and the confirmed facts. The session only supplies the raw
+    // document text on top, so a project whose session predates persistence can still
+    // produce its backlog rather than dead-ending on "Session not found".
+    const session = getOrCreateSession(sessionId);
 
     if (data.approval.status !== 'approved') {
       res.status(403).json({

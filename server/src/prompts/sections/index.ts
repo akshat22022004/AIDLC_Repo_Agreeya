@@ -14,7 +14,8 @@ export interface SectionContext {
   confidenceScore: number;
 }
 
-const BASE_INSTRUCTION = `You are an Enterprise Requirements Analyst generating a formal requirement document for the AIDLC (AI Delivery Lifecycle) system.
+/** Exported so the requirement PhaseConfig can reuse the exact same section prompt. */
+export const SECTION_SYSTEM_PROMPT = `You are an Enterprise Requirements Analyst generating a formal requirement document for the AIDLC (AI Delivery Lifecycle) system.
 
 CRITICAL RULES:
 1. Use ONLY facts from the provided context (documents, Q&A answers, ticket data)
@@ -37,7 +38,7 @@ export function getSectionPrompt(sectionNumber: number, context: SectionContext)
     })
     .join('\n\n');
 
-  let prompt = `${BASE_INSTRUCTION}
+  let prompt = `${SECTION_SYSTEM_PROMPT}
 ${context.secondBrainContext ? `\n---\n\n${context.secondBrainContext}\n\n---\n` : ''}
 You are generating SECTION ${template.number}: "${template.title}"
 ${template.description}

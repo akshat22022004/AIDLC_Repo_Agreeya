@@ -20,6 +20,7 @@ import testsRouter from './routes/tests.js';
 import releaseRouter from './routes/release.js';
 import approvalRouter from './routes/approval.js';
 import excelReportRouter from './routes/excelReport.js';
+import { phaseEngineRouter, phaseHubRouter } from './routes/phaseEngine.js';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -47,6 +48,10 @@ app.use('/api/git', gitRouter);
 app.use('/api/projects', approvalRouter);
 app.use('/api/projects', excelReportRouter);
 app.use('/api/projects', projectsRouter);
+// The generic phase engine. One set of routes for every phase; the legacy
+// requirement routes above stay mounted and keep working unchanged.
+app.use('/api/phase', phaseEngineRouter);
+app.use('/api/phases', phaseHubRouter);
 app.use('/api/architecture', architectureRouter);
 app.use('/api/design', designRouter);
 app.use('/api/tests', testsRouter);

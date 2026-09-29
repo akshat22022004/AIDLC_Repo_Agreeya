@@ -71,7 +71,10 @@ export class GeminiAdapter implements LLMAdapter {
           model: modelName,
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 8192,
+            // A re-analysis carries the whole Second Brain — understanding, Q&A chain
+            // and confirmed facts — so the JSON it returns grows with the project.
+            // 8k truncated it mid-object on a project with any real history.
+            maxOutputTokens: 32768,
           },
         },
         REQUEST_OPTIONS

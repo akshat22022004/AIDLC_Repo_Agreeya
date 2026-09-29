@@ -99,12 +99,20 @@ export class GitHubAdapter implements GitProviderAdapter {
     const commitData = await this.request(`/repos/${repo}/git/commits/${baseCommitSha}`);
     const baseTreeSha = commitData.tree.sha;
 
-    const tree = files.map((f) => ({
-      path: f.path,
-      mode: '100644' as const,
-      type: 'blob' as const,
-      content: f.content,
-    }));
+    // Inline tree content must be UTF-8; binary files (JPGs) go up as blobs first.
+    const tree = await Promise.all(
+      files.map(async (f) => {
+        if (f.encoding !== 'base64') {
+          return { path: f.path, mode: '100644' as const, type: 'blob' as const, content: f.content };
+        }
+        const blob = await this.request(`/repos/${repo}/git/blobs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: f.content, encoding: 'base64' }),
+        });
+        return { path: f.path, mode: '100644' as const, type: 'blob' as const, sha: blob.sha as string };
+      })
+    );
 
     const newTree = await this.request(`/repos/${repo}/git/trees`, {
       method: 'POST',

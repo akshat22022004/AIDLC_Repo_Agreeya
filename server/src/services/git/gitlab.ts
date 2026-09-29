@@ -88,6 +88,7 @@ export class GitLabAdapter implements GitProviderAdapter {
           action: existing !== null ? 'update' : 'create',
           file_path: f.path,
           content: f.content,
+          ...(f.encoding === 'base64' ? { encoding: 'base64' } : {}),
         };
       }),
     );

@@ -1,11 +1,18 @@
 import { useState, useCallback } from 'react';
 import type { AnalysisResult, ClarifyingQuestion } from '../types';
 import * as api from '../services/api';
+import * as phaseApi from '../services/phaseApi';
 
 interface Props {
   sessionId: string;
   analysis: AnalysisResult;
   onUpdated: (analysis: AnalysisResult) => void;
+  /**
+   * Which phase these questions belong to. Omitted for the requirement phase,
+   * which answers through its own long-standing routes; any other phase routes
+   * its answers through the generic phase engine.
+   */
+  phaseId?: string;
 }
 
 const PRIORITY_STYLES = {
@@ -192,7 +199,7 @@ function QuestionCard({
   );
 }
 
-export default function QuestionPanel({ sessionId, analysis, onUpdated }: Props) {
+export default function QuestionPanel({ sessionId, analysis, onUpdated, phaseId }: Props) {
   const questions = analysis.questions;
   const answered = questions.filter((q) => q.status === 'answered').length;
   const total = questions.length;
@@ -200,7 +207,8 @@ export default function QuestionPanel({ sessionId, analysis, onUpdated }: Props)
   const handleAnswer = useCallback(
     async (questionId: string, answer: string | string[]) => {
       try {
-        await api.answerQuestion(sessionId, questionId, answer);
+        if (phaseId) await phaseApi.answerPhaseQuestion(phaseId, sessionId, questionId, answer);
+        else await api.answerQuestion(sessionId, questionId, answer);
         const q = questions.find((q) => q.id === questionId);
         if (q) {
           q.answer = answer;
@@ -211,13 +219,14 @@ export default function QuestionPanel({ sessionId, analysis, onUpdated }: Props)
         alert(`Failed to submit answer: ${err.message}`);
       }
     },
-    [sessionId, analysis, questions, onUpdated]
+    [sessionId, analysis, questions, onUpdated, phaseId]
   );
 
   const handleSkip = useCallback(
     async (questionId: string) => {
       try {
-        await api.skipQuestion(sessionId, questionId);
+        if (phaseId) await phaseApi.skipPhaseQuestion(phaseId, sessionId, questionId);
+        else await api.skipQuestion(sessionId, questionId);
         const q = questions.find((q) => q.id === questionId);
         if (q) q.status = 'skipped';
         onUpdated({ ...analysis });
@@ -225,7 +234,7 @@ export default function QuestionPanel({ sessionId, analysis, onUpdated }: Props)
         alert(`Failed to skip: ${err.message}`);
       }
     },
-    [sessionId, analysis, questions, onUpdated]
+    [sessionId, analysis, questions, onUpdated, phaseId]
   );
 
   const groups = [

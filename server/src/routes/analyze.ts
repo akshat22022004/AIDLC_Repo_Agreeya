@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
-import { sessions, getLLM } from '../state.js';
+import { getLLM, loadSession, saveSession } from '../state.js';
 import { analyzeDocuments, flattenAnsweredQuestions } from '../services/analyzer.js';
 import * as brain from '../services/secondBrain.js';
 import { MAX_QUESTION_CYCLES } from '../services/secondBrain.js';
@@ -11,7 +11,7 @@ const router = Router();
 router.post('/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
 
     if (!session) {
       res.status(404).json({ success: false, error: 'Session not found' });
@@ -90,6 +90,7 @@ router.post('/:sessionId', async (req, res) => {
       questions: outcome.questions,
     };
     session.analyses.push(analysis);
+    saveSession(session);
 
     const status = brain.getStatus(sessionId);
 
@@ -114,7 +115,7 @@ router.post('/:sessionId', async (req, res) => {
 
 router.get('/:sessionId', (req, res) => {
   const { sessionId } = req.params;
-  const session = sessions.get(sessionId);
+  const session = loadSession(sessionId);
   if (!session || session.analyses.length === 0) {
     res.status(404).json({ success: false, error: 'No analysis found' });
     return;

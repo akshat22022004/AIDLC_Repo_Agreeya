@@ -22,6 +22,7 @@ import type {
   ProjectStats,
   ArchitectureDoc,
   ArchitectureSummary,
+  PhaseDiagram,
   DesignDoc,
   DesignSummary,
   TestDoc,
@@ -300,8 +301,18 @@ export async function getTicket(sessionId: string, provider: string, ticketId: s
   return handleResponse<Ticket>(res);
 }
 
-export async function workOnTicket(sessionId: string, provider: string, ticketId: string): Promise<{ ticket: Ticket; injected: boolean }> {
-  const res = await fetch(`${BASE}/tickets/${sessionId}/work-on/${ticketId}?provider=${provider}`, { method: 'POST' });
+/**
+ * `sessionId` addresses the provider connection (workspace-scoped); `targetSessionId`
+ * is the project session the ticket gets filed into.
+ */
+export async function workOnTicket(
+  sessionId: string,
+  provider: string,
+  ticketId: string,
+  targetSessionId: string,
+): Promise<{ ticket: Ticket; injected: boolean }> {
+  const params = new URLSearchParams({ provider, targetSessionId });
+  const res = await fetch(`${BASE}/tickets/${sessionId}/work-on/${ticketId}?${params}`, { method: 'POST' });
   return handleResponse<{ ticket: Ticket; injected: boolean }>(res);
 }
 
@@ -575,7 +586,6 @@ export async function createProject(data: {
   name: string;
   description?: string;
   client?: string;
-  sessionId?: string;
   ticketProvider?: string;
   ticketProjectId?: string;
   gitProvider?: string;
@@ -599,9 +609,19 @@ export async function updateProject(projectId: string, updates: Partial<Project>
   return handleResponse<Project>(res);
 }
 
+/** Hide a project from the dashboard without destroying its work. */
 export async function archiveProject(projectId: string): Promise<void> {
-  const res = await fetch(`${BASE}/projects/${projectId}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/projects/${projectId}/archive`, { method: 'POST' });
   await handleResponse<any>(res);
+}
+
+/**
+ * Permanently delete a project along with its Second Brain, requirements and every
+ * downstream artifact. Not reversible.
+ */
+export async function deleteProject(projectId: string): Promise<{ id: string; name: string }> {
+  const res = await fetch(`${BASE}/projects/${projectId}`, { method: 'DELETE' });
+  return handleResponse<{ id: string; name: string }>(res);
 }
 
 // ── Architecture ──
@@ -709,6 +729,62 @@ export async function finalizeArchitecture(
     headers: { 'Content-Type': 'application/json' },
   });
   return handleResponse<{ savedPath: string; architectureId: string; markdown: string }>(res);
+}
+
+// ── Architecture diagram ──
+
+function diagramUrl(projectId: string, archId: string, suffix = ''): string {
+  return `${BASE}/architecture/${projectId}/${archId}/diagram${suffix}`;
+}
+
+async function postJson<T>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+  return handleResponse<T>(res);
+}
+
+export async function generateArchitectureDiagram(
+  projectId: string,
+  archId: string,
+  feedback?: string,
+): Promise<PhaseDiagram> {
+  return postJson<PhaseDiagram>(
+    `${BASE}/architecture/${projectId}/${archId}/generate-diagram`,
+    { feedback },
+  );
+}
+
+export async function getArchitectureDiagram(
+  projectId: string,
+  archId: string,
+): Promise<PhaseDiagram> {
+  return handleResponse<PhaseDiagram>(await fetch(diagramUrl(projectId, archId)));
+}
+
+export async function saveArchitectureDiagram(
+  projectId: string,
+  archId: string,
+  mermaid: string,
+): Promise<PhaseDiagram> {
+  return postJson<PhaseDiagram>(diagramUrl(projectId, archId), { mermaid });
+}
+
+export async function approveArchitectureDiagram(
+  projectId: string,
+  archId: string,
+  mermaid?: string,
+): Promise<PhaseDiagram> {
+  return postJson<PhaseDiagram>(diagramUrl(projectId, archId, '/approve'), { mermaid });
+}
+
+export async function skipArchitectureDiagram(
+  projectId: string,
+  archId: string,
+): Promise<PhaseDiagram> {
+  return postJson<PhaseDiagram>(diagramUrl(projectId, archId, '/skip'));
 }
 
 // ── Design ──

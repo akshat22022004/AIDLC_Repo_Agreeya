@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { sessions, getLLM, chatHistories } from '../state.js';
+import { chatHistories, getLLM, loadSession } from '../state.js';
 import { CHAT_SYSTEM_PROMPT } from '../prompts/questionGeneration.js';
 import { buildSecondBrainContextBlock } from '../services/secondBrain.js';
 import fs from 'fs/promises';
@@ -17,7 +17,7 @@ router.post('/:sessionId', async (req, res) => {
       return;
     }
 
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (!session) {
       res.status(404).json({ success: false, error: 'Session not found' });
       return;

@@ -4,6 +4,8 @@ interface Props {
   project: Project;
   onOpen: () => void;
   onNewRequirement: () => void;
+  onDelete: () => void;
+  deleting?: boolean;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -13,8 +15,7 @@ const STATUS_STYLES: Record<string, string> = {
   archived: 'bg-slate-100 text-slate-500',
 };
 
-export default function ProjectCard({ project, onOpen, onNewRequirement }: Props) {
-  const totalSections = 15;
+export default function ProjectCard({ project, onOpen, onNewRequirement, onDelete, deleting }: Props) {
   const approvedPct = project.requirementCount > 0
     ? Math.round((project.approvedCount / project.requirementCount) * 100)
     : 0;
@@ -81,15 +82,37 @@ export default function ProjectCard({ project, onOpen, onNewRequirement }: Props
         <div className="flex gap-2">
           <button
             onClick={onOpen}
-            className="flex-1 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors"
+            disabled={deleting}
+            className="flex-1 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
           >
             Open
           </button>
           <button
             onClick={onNewRequirement}
-            className="px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors"
+            disabled={deleting}
+            className="px-3 py-1.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
           >
             New Req
+          </button>
+          <button
+            onClick={onDelete}
+            disabled={deleting}
+            title={`Delete ${project.name}`}
+            aria-label={`Delete ${project.name}`}
+            className="px-3 py-1.5 border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+          >
+            {deleting ? (
+              <span className="inline-block w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin align-middle" />
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+            )}
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs/promises';
 import path from 'path';
-import { sessions, getLLM } from '../state.js';
+import { getLLM, loadSession } from '../state.js';
 import { getSectionPrompt, type SectionContext } from '../prompts/sections/index.js';
 import { assembleRequirement } from '../prompts/sections/assembler.js';
 import {
@@ -34,7 +34,7 @@ router.get('/project/:sessionId/list', (req, res) => {
 router.post('/:sessionId/init', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (!session || session.analyses.length === 0) {
       res.status(404).json({ success: false, error: 'No analysis found for this session' });
       return;
@@ -91,7 +91,7 @@ router.post('/:sessionId/:reqId/generate', async (req, res) => {
     const doc = getRequirement(sessionId, reqId);
     if (!doc) { res.status(404).json({ success: false, error: 'Requirement not found' }); return; }
 
-    const session = sessions.get(sessionId);
+    const session = loadSession(sessionId);
     if (!session || session.analyses.length === 0) {
       res.status(404).json({ success: false, error: 'Session analysis not found' });
       return;

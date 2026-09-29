@@ -5,10 +5,9 @@ import type { Project } from '../types';
 interface Props {
   onCreated: (project: Project) => void;
   onCancel: () => void;
-  sessionId: string;
 }
 
-export default function ProjectForm({ onCreated, onCancel, sessionId }: Props) {
+export default function ProjectForm({ onCreated, onCancel }: Props) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [client, setClient] = useState('');
@@ -21,11 +20,12 @@ export default function ProjectForm({ onCreated, onCancel, sessionId }: Props) {
     setCreating(true);
     setError(null);
     try {
+      // No session id is sent: the server mints one per project so no two projects
+      // can ever share a context.
       const project = await api.createProject({
         name: name.trim(),
         description: description.trim(),
         client: client.trim() || undefined,
-        sessionId,
       });
       onCreated(project);
     } catch (err: any) {

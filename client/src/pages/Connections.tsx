@@ -1,18 +1,11 @@
 import { useState } from 'react';
 import ConnectionsPanel from '../components/ConnectionsPanel';
 import GitProviderCards from '../components/GitProviderCards';
-
-function getSessionId(): string {
-  let id = sessionStorage.getItem('aidlc-session');
-  if (!id) {
-    id = crypto.randomUUID();
-    sessionStorage.setItem('aidlc-session', id);
-  }
-  return id;
-}
+import { getWorkspaceSessionId } from '../services/session';
 
 export default function Connections() {
-  const [sessionId] = useState(getSessionId);
+  // Provider connections are workspace-wide, shared by every project.
+  const [sessionId] = useState(getWorkspaceSessionId);
 
   return (
     <div className="min-h-screen bg-slate-50">

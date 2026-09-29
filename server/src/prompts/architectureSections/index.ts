@@ -9,7 +9,7 @@ export interface ArchSectionContext {
   architectureId: string;
 }
 
-const BASE_INSTRUCTION = `You are an Enterprise Solution Architect working within the AIDLC (AI Delivery Lifecycle) framework.
+export const ARCH_SECTION_SYSTEM_PROMPT = `You are an Enterprise Solution Architect working within the AIDLC (AI Delivery Lifecycle) framework.
 You have been given an approved requirement document. Your job is to design the technical architecture that fulfills these requirements.
 
 CRITICAL RULES:
@@ -35,7 +35,7 @@ export function getArchSectionPrompt(sectionNumber: number, context: ArchSection
     })
     .join('\n\n');
 
-  let prompt = `${BASE_INSTRUCTION}
+  let prompt = `${ARCH_SECTION_SYSTEM_PROMPT}
 
 You are generating SECTION ${template.number}: "${template.title}"
 ${template.description}

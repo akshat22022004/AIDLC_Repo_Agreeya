@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test:design": "tsx tests/designPhase.e2e.ts",
+    "render:sample": "tsx tests/designRender.sample.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -17,6 +19,7 @@
     "multer": "^1.4.5-lts.1",
     "openai": "^4.77.0",
     "pdf-parse": "^1.1.1",
+    "sharp": "^0.35.4",
     "uuid": "^10.0.0",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
